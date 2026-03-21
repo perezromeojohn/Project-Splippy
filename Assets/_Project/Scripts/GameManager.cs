@@ -2,23 +2,16 @@ using UnityEngine;
 using PrimeTween;
 using UnityEngine.InputSystem;
 using System.Collections.Generic;
+using TMPro;
 
 namespace projectsplippy
 {
     public class GameManager : MonoBehaviour
     {
-        private enum GroundType
-        {
-            Farmland,
-            Ecosystem,
-            Sanitation,
-            Marine
-        }
-
         [System.Serializable]
-        private struct GroundTypeMaterial
+        private struct TileTypeMaterial
         {
-            public GroundType type;
+            public TileType type;
             public Material material;
         }
 
@@ -38,7 +31,18 @@ namespace projectsplippy
         [SerializeField] private GameObject groundTilePrefab;
         [SerializeField] private float tileHeight = 0.2f;
         [SerializeField] private float tileYOffset = -0.1f;
-        [SerializeField] private GroundTypeMaterial[] groundMaterials;
+        [SerializeField] private TileTypeMaterial[] groundMaterials;
+
+        [Header("Tile Rules")]
+        [SerializeField] private TileRules tileRules = default;
+
+        [Header("Run")]
+        [SerializeField] private int maxWaterReserve = 10;
+        [SerializeField] private int scorePerLanding = 1;
+
+        [Header("UI")]
+        [SerializeField] private TMP_Text scoreText;
+        [SerializeField] private TMP_Text waterText;
 
         [Header("Player")]
         [SerializeField] private Transform splippy;
@@ -62,10 +66,15 @@ namespace projectsplippy
         private InputAction moveTowardsAction;
         private Vector2Int currentCell;
         private bool isMoving;
-        private readonly Dictionary<GroundType, Material> materialByType = new Dictionary<GroundType, Material>();
+        private TileGridModel tileGridModel;
+        private readonly Dictionary<TileType, Material> materialByType = new Dictionary<TileType, Material>();
         private readonly Dictionary<Vector2Int, Transform> tileByCell = new Dictionary<Vector2Int, Transform>();
         private readonly Dictionary<Vector2Int, Vector3> tileBaseScaleByCell = new Dictionary<Vector2Int, Vector3>();
+        private readonly Dictionary<Vector2Int, Tween> tileScaleTweenByCell = new Dictionary<Vector2Int, Tween>();
         private Vector3 splippyBaseScale = Vector3.one;
+        private int currentScore;
+        private int currentWaterReserve;
+        private bool isGameOver;
 
         private void Awake()
         {
@@ -87,9 +96,17 @@ namespace projectsplippy
             gridSize = Mathf.Max(1, gridSize);
             cellSize = Mathf.Max(0.1f, cellSize);
             tileHeight = Mathf.Max(0.05f, tileHeight);
+            tileRules = ResolveTileRules(tileRules);
+            tileGridModel = new TileGridModel(gridSize, tileRules);
+            maxWaterReserve = Mathf.Max(1, maxWaterReserve);
+            scorePerLanding = Mathf.Max(1, scorePerLanding);
+            currentWaterReserve = maxWaterReserve;
+            currentScore = 0;
+            isGameOver = false;
 
             CacheGroundMaterials();
             SetupInput();
+            RefreshHud();
 
             currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
             splippy.position = CellToWorldForSplippy(currentCell);
@@ -113,6 +130,11 @@ namespace projectsplippy
         private void Update()
         {
             if (isMoving)
+            {
+                return;
+            }
+
+            if (isGameOver)
             {
                 return;
             }
@@ -219,7 +241,7 @@ namespace projectsplippy
 
             for (int i = 0; i < groundMaterials.Length; i++)
             {
-                GroundTypeMaterial entry = groundMaterials[i];
+                TileTypeMaterial entry = groundMaterials[i];
 
                 if (entry.material == null)
                 {
@@ -234,14 +256,16 @@ namespace projectsplippy
         {
             tileByCell.Clear();
             tileBaseScaleByCell.Clear();
+            tileScaleTweenByCell.Clear();
 
             for (int x = 0; x < gridSize; x++)
             {
                 for (int y = 0; y < gridSize; y++)
                 {
                     Vector2Int cell = new Vector2Int(x, y);
-                    GroundType type = GetInitialGroundType(cell);
+                    TileType type = GetInitialGroundType(cell);
                     Material material = GetMaterialForType(type);
+                    tileGridModel.SetTileType(cell, type);
 
                     GameObject tile = CreateGroundTile();
                     tile.name = $"Tile_{x}_{y}_{type}";
@@ -273,13 +297,13 @@ namespace projectsplippy
             return GameObject.CreatePrimitive(PrimitiveType.Cube);
         }
 
-        private GroundType GetInitialGroundType(Vector2Int cell)
+        private TileType GetInitialGroundType(Vector2Int cell)
         {
             int pick = Mathf.Abs((cell.x * 73856093) ^ (cell.y * 19349663)) % 4;
-            return (GroundType)pick;
+            return (TileType)pick;
         }
 
-        private Material GetMaterialForType(GroundType type)
+        private Material GetMaterialForType(TileType type)
         {
             materialByType.TryGetValue(type, out Material material);
             return material;
@@ -334,6 +358,14 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
+                            HandleTileLanding(nextCell);
+
+                            if (isGameOver)
+                            {
+                                isMoving = false;
+                                return;
+                            }
+
                             PlayTileLandingFeedback(nextCell);
                             Tween.Scale(splippy, splippyBaseScale, landingSettleDuration, landingSettleEase);
                             MoveAlongPath(path, index + 1);
@@ -341,27 +373,126 @@ namespace projectsplippy
                 });
         }
 
-        private void PlayTileTapFeedback(Vector2Int cell)
+        private void HandleTileLanding(Vector2Int landedCell)
         {
-            if (!tileByCell.TryGetValue(cell, out Transform tileTransform))
+            if (tileGridModel == null)
             {
                 return;
             }
 
-            if (!tileBaseScaleByCell.TryGetValue(cell, out Vector3 baseScale))
+            if (!tileGridModel.TryGetTile(landedCell, out TileData landedTile))
             {
-                baseScale = tileTransform.localScale;
-                tileBaseScaleByCell[cell] = baseScale;
+                return;
             }
 
-            float clampedDuration = Mathf.Max(0.01f, tileTapDuration * 0.5f);
-            Vector3 targetScale = baseScale * tileTapScaleMultiplier;
+            TileLandingResult result = tileGridModel.ProcessLanding(landedCell);
+            ApplyWaterAndScore(landedTile.Type);
 
-            Tween.Scale(tileTransform, targetScale, clampedDuration, cycles: 2, cycleMode: CycleMode.Yoyo);
+            if (result.LandedCellBloomed)
+            {
+                PlayTileTapFeedback(landedCell);
+            }
+
+            if (result.PollutedCells.Count > 0)
+            {
+                for (int i = 0; i < result.PollutedCells.Count; i++)
+                {
+                    PlayTileLandingFeedback(result.PollutedCells[i]);
+                }
+            }
+        }
+
+        private void ApplyWaterAndScore(TileType landedType)
+        {
+            currentWaterReserve = Mathf.Max(0, currentWaterReserve - 1);
+
+            if (landedType == TileType.Marine)
+            {
+                currentWaterReserve = maxWaterReserve;
+            }
+
+            currentScore += scorePerLanding;
+            RefreshHud();
+
+            if (currentWaterReserve <= 0)
+            {
+                TriggerGameOver();
+            }
+        }
+
+        private void TriggerGameOver()
+        {
+            if (isGameOver)
+            {
+                return;
+            }
+
+            isGameOver = true;
+            isMoving = false;
+
+            if (waterText != null)
+            {
+                waterText.text = $"Water: {currentWaterReserve}/{maxWaterReserve} - GAME OVER";
+            }
+        }
+
+        private void RefreshHud()
+        {
+            if (scoreText != null)
+            {
+                scoreText.text = $"Score: {currentScore}";
+            }
+
+            if (waterText != null)
+            {
+                waterText.text = $"Water: {currentWaterReserve}/{maxWaterReserve}";
+            }
+        }
+
+        private TileRules ResolveTileRules(TileRules rules)
+        {
+            TileRules fallback = TileRules.Default;
+
+            if (rules.farmlandMaxProgress <= 0)
+            {
+                rules.farmlandMaxProgress = fallback.farmlandMaxProgress;
+            }
+
+            if (rules.ecosystemMaxProgress <= 0)
+            {
+                rules.ecosystemMaxProgress = fallback.ecosystemMaxProgress;
+            }
+
+            if (rules.marineMaxProgress <= 0)
+            {
+                rules.marineMaxProgress = fallback.marineMaxProgress;
+            }
+
+            if (rules.ecosystemDecayTurns <= 0)
+            {
+                rules.ecosystemDecayTurns = fallback.ecosystemDecayTurns;
+            }
+
+            if (rules.sanitationTimeoutTurns <= 0)
+            {
+                rules.sanitationTimeoutTurns = fallback.sanitationTimeoutTurns;
+            }
+
+            return rules;
+        }
+
+        private void PlayTileTapFeedback(Vector2Int cell)
+        {
+            PlayTileScaleFeedback(cell, tileTapScaleMultiplier, tileTapDuration);
         }
 
         private void PlayTileLandingFeedback(Vector2Int cell)
         {
+            PlayTileScaleFeedback(cell, tileLandingScaleMultiplier, tileLandingDuration);
+        }
+
+        private void PlayTileScaleFeedback(Vector2Int cell, float scaleMultiplier, float duration)
+        {
             if (!tileByCell.TryGetValue(cell, out Transform tileTransform))
             {
                 return;
@@ -373,9 +504,23 @@ namespace projectsplippy
                 tileBaseScaleByCell[cell] = baseScale;
             }
 
-            float clampedDuration = Mathf.Max(0.01f, tileLandingDuration * 0.5f);
-            Vector3 targetScale = baseScale * tileLandingScaleMultiplier;
-            Tween.Scale(tileTransform, targetScale, clampedDuration, cycles: 2, cycleMode: CycleMode.Yoyo);
+            if (tileScaleTweenByCell.TryGetValue(cell, out Tween activeTween) && activeTween.isAlive)
+            {
+                activeTween.Stop();
+            }
+
+            tileTransform.localScale = baseScale;
+
+            float clampedDuration = Mathf.Max(0.01f, duration * 0.5f);
+            Vector3 targetScale = baseScale * scaleMultiplier;
+
+            Tween scaleTween = Tween.Scale(tileTransform, targetScale, clampedDuration, cycles: 2, cycleMode: CycleMode.Yoyo)
+                .OnComplete(() =>
+                {
+                    tileTransform.localScale = baseScale;
+                });
+
+            tileScaleTweenByCell[cell] = scaleTween;
         }
 
         private bool IsCellWalkable(Vector2Int cell)
