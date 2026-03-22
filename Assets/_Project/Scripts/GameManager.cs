@@ -29,12 +29,25 @@ namespace projectsplippy
         [SerializeField] private bool buildGroundOnAwake = true;
         [SerializeField] private Transform groundParent;
         [SerializeField] private GameObject groundTilePrefab;
+        [SerializeField] private GameObject[] rockTopPrefabs;
         [SerializeField] private float tileHeight = 0.2f;
         [SerializeField] private float tileYOffset = -0.1f;
+        [SerializeField] private float rockTopYOffset = 0.06f;
+        [SerializeField] private Vector3 rockTopScale = Vector3.one;
         [SerializeField] private TileTypeMaterial[] groundMaterials;
 
         [Header("Tile Rules")]
         [SerializeField] private TileRules tileRules = default;
+
+        [Header("Board Turn")]
+        [SerializeField, Min(0)] private int replacementsPerTurn = 2;
+        [SerializeField, Min(0)] private int farmlandLockTurns = 2;
+        [SerializeField, Range(0, 100)] private int rockChancePercent = 12;
+
+        [Header("Early Board Mix (%)")]
+        [SerializeField, Range(0, 100)] private int fillerPercent = 60;
+        [SerializeField, Range(0, 100)] private int farmlandPercent = 32;
+        [SerializeField, Range(0, 100)] private int marinePercent = 8;
 
         [Header("Run")]
         [SerializeField] private int maxWaterReserve = 10;
@@ -61,16 +74,23 @@ namespace projectsplippy
         [SerializeField] private float tileTapDuration = 0.1f;
         [SerializeField] private float tileLandingScaleMultiplier = 0.9f;
         [SerializeField] private float tileLandingDuration = 0.08f;
+        [SerializeField] private float tileReplaceFlipDuration = 0.22f;
+        [SerializeField] private Ease tileReplaceFlipInEase = Ease.InBack;
+        [SerializeField] private Ease tileReplaceFlipOutEase = Ease.OutBack;
 
         private Camera mainCamera;
         private InputAction moveTowardsAction;
         private Vector2Int currentCell;
         private bool isMoving;
-        private TileGridModel tileGridModel;
+        private TileBoardSystem tileBoardSystem;
         private readonly Dictionary<TileType, Material> materialByType = new Dictionary<TileType, Material>();
         private readonly Dictionary<Vector2Int, Transform> tileByCell = new Dictionary<Vector2Int, Transform>();
+        private readonly Dictionary<Vector2Int, Renderer> tileRendererByCell = new Dictionary<Vector2Int, Renderer>();
+        private readonly Dictionary<Vector2Int, GameObject> rockTopByCell = new Dictionary<Vector2Int, GameObject>();
         private readonly Dictionary<Vector2Int, Vector3> tileBaseScaleByCell = new Dictionary<Vector2Int, Vector3>();
+        private readonly Dictionary<Vector2Int, Vector3> tileBaseRotationByCell = new Dictionary<Vector2Int, Vector3>();
         private readonly Dictionary<Vector2Int, Tween> tileScaleTweenByCell = new Dictionary<Vector2Int, Tween>();
+        private readonly Dictionary<Vector2Int, Tween> tileRotateTweenByCell = new Dictionary<Vector2Int, Tween>();
         private Vector3 splippyBaseScale = Vector3.one;
         private int currentScore;
         private int currentWaterReserve;
@@ -97,7 +117,11 @@ namespace projectsplippy
             cellSize = Mathf.Max(0.1f, cellSize);
             tileHeight = Mathf.Max(0.05f, tileHeight);
             tileRules = ResolveTileRules(tileRules);
-            tileGridModel = new TileGridModel(gridSize, tileRules);
+            currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
+            TileSpawnWeights spawnWeights = BuildSpawnWeights();
+            BoardTurnRules boardTurnRules = BuildBoardTurnRules();
+            tileBoardSystem = new TileBoardSystem(gridSize, tileRules, boardTurnRules, spawnWeights);
+            tileBoardSystem.InitializeBoard(currentCell);
             maxWaterReserve = Mathf.Max(1, maxWaterReserve);
             scorePerLanding = Mathf.Max(1, scorePerLanding);
             currentWaterReserve = maxWaterReserve;
@@ -108,7 +132,6 @@ namespace projectsplippy
             SetupInput();
             RefreshHud();
 
-            currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
             splippy.position = CellToWorldForSplippy(currentCell);
 
             if (buildGroundOnAwake)
@@ -254,18 +277,26 @@ namespace projectsplippy
 
         public void BuildGroundGrid()
         {
+            EnsureGroundParent();
+            ClearExistingGround();
+
             tileByCell.Clear();
+            tileRendererByCell.Clear();
+            rockTopByCell.Clear();
             tileBaseScaleByCell.Clear();
+            tileBaseRotationByCell.Clear();
             tileScaleTweenByCell.Clear();
+            tileRotateTweenByCell.Clear();
+
+            tileBoardSystem.InitializeBoard(currentCell);
 
             for (int x = 0; x < gridSize; x++)
             {
                 for (int y = 0; y < gridSize; y++)
                 {
                     Vector2Int cell = new Vector2Int(x, y);
-                    TileType type = GetInitialGroundType(cell);
+                    TileType type = tileBoardSystem.GetTileType(cell);
                     Material material = GetMaterialForType(type);
-                    tileGridModel.SetTileType(cell, type);
 
                     GameObject tile = CreateGroundTile();
                     tile.name = $"Tile_{x}_{y}_{type}";
@@ -274,16 +305,46 @@ namespace projectsplippy
                     Vector3 tilePosition = CellToWorld(cell) + new Vector3(0f, tileYOffset, 0f);
                     tile.transform.position = tilePosition;
                     tile.transform.localScale = new Vector3(cellSize, tileHeight, cellSize);
+                    tile.transform.localEulerAngles = Vector3.zero;
                     tileByCell[cell] = tile.transform;
                     tileBaseScaleByCell[cell] = tile.transform.localScale;
+                    tileBaseRotationByCell[cell] = tile.transform.localEulerAngles;
 
                     Renderer renderer = tile.GetComponent<Renderer>();
+                    tileRendererByCell[cell] = renderer;
 
                     if (renderer != null && material != null)
                     {
                         renderer.sharedMaterial = material;
                     }
+
+                    SyncRockTopVisual(cell, type);
                 }
+            }
+        }
+
+        private void EnsureGroundParent()
+        {
+            if (groundParent != null)
+            {
+                return;
+            }
+
+            var root = new GameObject("GroundRoot");
+            groundParent = root.transform;
+            groundParent.SetParent(transform, false);
+        }
+
+        private void ClearExistingGround()
+        {
+            if (groundParent == null)
+            {
+                return;
+            }
+
+            for (int i = groundParent.childCount - 1; i >= 0; i--)
+            {
+                Destroy(groundParent.GetChild(i).gameObject);
             }
         }
 
@@ -295,12 +356,6 @@ namespace projectsplippy
             }
 
             return GameObject.CreatePrimitive(PrimitiveType.Cube);
-        }
-
-        private TileType GetInitialGroundType(Vector2Int cell)
-        {
-            int pick = Mathf.Abs((cell.x * 73856093) ^ (cell.y * 19349663)) % 4;
-            return (TileType)pick;
         }
 
         private Material GetMaterialForType(TileType type)
@@ -322,10 +377,10 @@ namespace projectsplippy
             }
 
             isMoving = true;
-            MoveAlongPath(path, 1);
+            MoveAlongPath(path, 1, path.Count - 1);
         }
 
-        private void MoveAlongPath(List<Vector2Int> path, int index)
+        private void MoveAlongPath(List<Vector2Int> path, int index, int finalIndex)
         {
             if (index >= path.Count)
             {
@@ -358,7 +413,15 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
-                            HandleTileLanding(nextCell);
+
+                            if (index == finalIndex)
+                            {
+                                ResolveTurnAtDestination(nextCell);
+                            }
+                            else
+                            {
+                                PlayTileLandingFeedback(nextCell);
+                            }
 
                             if (isGameOver)
                             {
@@ -366,39 +429,47 @@ namespace projectsplippy
                                 return;
                             }
 
-                            PlayTileLandingFeedback(nextCell);
                             Tween.Scale(splippy, splippyBaseScale, landingSettleDuration, landingSettleEase);
-                            MoveAlongPath(path, index + 1);
+                            MoveAlongPath(path, index + 1, finalIndex);
                         });
                 });
         }
 
-        private void HandleTileLanding(Vector2Int landedCell)
+        private void ResolveTurnAtDestination(Vector2Int landedCell)
         {
-            if (tileGridModel == null)
+            TileType landedTypeBeforeTurn = tileBoardSystem != null
+                ? tileBoardSystem.GetTileType(landedCell)
+                : TileType.Filler;
+
+            ApplyWaterAndScore(landedTypeBeforeTurn);
+
+            if (isGameOver || tileBoardSystem == null)
             {
                 return;
             }
 
-            if (!tileGridModel.TryGetTile(landedCell, out TileData landedTile))
-            {
-                return;
-            }
+            BoardTurnResult turnResult = tileBoardSystem.ResolveEndTurn(landedCell);
 
-            TileLandingResult result = tileGridModel.ProcessLanding(landedCell);
-            ApplyWaterAndScore(landedTile.Type);
-
-            if (result.LandedCellBloomed)
+            if (turnResult.LandingResult.LandedCellBloomed)
             {
                 PlayTileTapFeedback(landedCell);
             }
 
-            if (result.PollutedCells.Count > 0)
+            PlayTileLandingFeedback(landedCell);
+
+            for (int i = 0; i < turnResult.LandingResult.DecayedCells.Count; i++)
             {
-                for (int i = 0; i < result.PollutedCells.Count; i++)
-                {
-                    PlayTileLandingFeedback(result.PollutedCells[i]);
-                }
+                PlayTileLandingFeedback(turnResult.LandingResult.DecayedCells[i]);
+            }
+
+            for (int i = 0; i < turnResult.LandingResult.PollutedCells.Count; i++)
+            {
+                PlayTileLandingFeedback(turnResult.LandingResult.PollutedCells[i]);
+            }
+
+            foreach (KeyValuePair<Vector2Int, TileType> replacement in turnResult.ReplacedTiles)
+            {
+                PlayTileReplacementFlip(replacement.Key, replacement.Value);
             }
         }
 
@@ -418,6 +489,43 @@ namespace projectsplippy
             {
                 TriggerGameOver();
             }
+        }
+
+        private TileSpawnWeights BuildSpawnWeights()
+        {
+            fillerPercent = Mathf.Clamp(fillerPercent, 0, 100);
+            farmlandPercent = Mathf.Clamp(farmlandPercent, 0, 100);
+            marinePercent = Mathf.Clamp(marinePercent, 0, 100);
+
+            int total = fillerPercent + farmlandPercent + marinePercent;
+
+            if (total <= 0)
+            {
+                return TileSpawnWeights.EarlyGameDefault;
+            }
+
+            float invTotal = 1f / total;
+
+            return new TileSpawnWeights
+            {
+                fillerWeight = fillerPercent * invTotal,
+                farmlandWeight = farmlandPercent * invTotal,
+                marineWeight = marinePercent * invTotal
+            };
+        }
+
+        private BoardTurnRules BuildBoardTurnRules()
+        {
+            replacementsPerTurn = Mathf.Max(0, replacementsPerTurn);
+            farmlandLockTurns = Mathf.Max(0, farmlandLockTurns);
+            rockChancePercent = Mathf.Clamp(rockChancePercent, 0, 100);
+
+            return new BoardTurnRules
+            {
+                replacementsPerTurn = replacementsPerTurn,
+                farmlandReplaceLockTurns = farmlandLockTurns,
+                rockChanceFromFiller = rockChancePercent / 100f
+            };
         }
 
         private void TriggerGameOver()
@@ -523,9 +631,130 @@ namespace projectsplippy
             tileScaleTweenByCell[cell] = scaleTween;
         }
 
+        private void PlayTileReplacementFlip(Vector2Int cell, TileType newType)
+        {
+            if (!tileByCell.TryGetValue(cell, out Transform tileTransform))
+            {
+                return;
+            }
+
+            if (!tileBaseRotationByCell.TryGetValue(cell, out Vector3 baseRotation))
+            {
+                baseRotation = tileTransform.localEulerAngles;
+                tileBaseRotationByCell[cell] = baseRotation;
+            }
+
+            if (tileRotateTweenByCell.TryGetValue(cell, out Tween activeTween) && activeTween.isAlive)
+            {
+                activeTween.Stop();
+            }
+
+            float halfDuration = Mathf.Max(0.05f, tileReplaceFlipDuration * 0.5f);
+            Vector3 foldIn = baseRotation + new Vector3(90f, 0f, 0f);
+            Vector3 foldOutStart = baseRotation + new Vector3(-90f, 0f, 0f);
+
+            Tween firstHalf = Tween.LocalEulerAngles(tileTransform, baseRotation, foldIn, halfDuration, tileReplaceFlipInEase)
+                .OnComplete(() =>
+                {
+                    ApplyTileMaterial(cell, newType);
+                    tileTransform.localEulerAngles = foldOutStart;
+
+                    Tween secondHalf = Tween.LocalEulerAngles(tileTransform, foldOutStart, baseRotation, halfDuration, tileReplaceFlipOutEase)
+                        .OnComplete(() =>
+                        {
+                            tileTransform.localEulerAngles = baseRotation;
+                        });
+
+                    tileRotateTweenByCell[cell] = secondHalf;
+                });
+
+            tileRotateTweenByCell[cell] = firstHalf;
+        }
+
+        private void ApplyTileMaterial(Vector2Int cell, TileType type)
+        {
+            if (!tileRendererByCell.TryGetValue(cell, out Renderer renderer) || renderer == null)
+            {
+                return;
+            }
+
+            Material material = GetMaterialForType(type);
+
+            if (material != null)
+            {
+                renderer.sharedMaterial = material;
+            }
+
+            SyncRockTopVisual(cell, type);
+        }
+
+        private void SyncRockTopVisual(Vector2Int cell, TileType type)
+        {
+            if (type != TileType.Rock)
+            {
+                if (rockTopByCell.TryGetValue(cell, out GameObject existingRock) && existingRock != null)
+                {
+                    Destroy(existingRock);
+                }
+
+                rockTopByCell.Remove(cell);
+                return;
+            }
+
+            if (!tileByCell.TryGetValue(cell, out Transform tileTransform))
+            {
+                return;
+            }
+
+            if (rockTopByCell.TryGetValue(cell, out GameObject existing) && existing != null)
+            {
+                return;
+            }
+
+            GameObject rockPrefab = PickRockTopPrefab();
+
+            if (rockPrefab == null)
+            {
+                return;
+            }
+
+            GameObject rockVisual = Instantiate(rockPrefab, tileTransform);
+            float topY = (tileHeight * 0.5f) + rockTopYOffset;
+            rockVisual.transform.localPosition = new Vector3(0f, topY, 0f);
+            rockVisual.transform.localRotation = Quaternion.Euler(0f, Random.Range(0f, 360f), 0f);
+            rockVisual.transform.localScale = rockTopScale;
+            rockTopByCell[cell] = rockVisual;
+        }
+
+        private GameObject PickRockTopPrefab()
+        {
+            if (rockTopPrefabs == null || rockTopPrefabs.Length == 0)
+            {
+                return null;
+            }
+
+            var valid = new List<GameObject>();
+
+            for (int i = 0; i < rockTopPrefabs.Length; i++)
+            {
+                if (rockTopPrefabs[i] != null)
+                {
+                    valid.Add(rockTopPrefabs[i]);
+                }
+            }
+
+            if (valid.Count == 0)
+            {
+                return null;
+            }
+
+            int index = Random.Range(0, valid.Count);
+            return valid[index];
+        }
+
         private bool IsCellWalkable(Vector2Int cell)
         {
-            return IsInBounds(cell.x, cell.y);
+            return IsInBounds(cell.x, cell.y) && tileBoardSystem != null && tileBoardSystem.IsWalkable(cell);
         }
 
         private bool IsInBounds(int x, int y)

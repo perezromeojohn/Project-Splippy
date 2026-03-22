@@ -5,10 +5,12 @@ namespace projectsplippy
 {
     public enum TileType
     {
+        Filler,
         Farmland,
         Ecosystem,
         Sanitation,
-        Marine
+        Marine,
+        Rock
     }
 
     [System.Serializable]
@@ -51,13 +53,11 @@ namespace projectsplippy
 
     public sealed class TileGridModel
     {
-        private readonly int gridSize;
         private readonly TileRules rules;
         private readonly Dictionary<Vector2Int, TileData> tiles = new Dictionary<Vector2Int, TileData>();
 
         public TileGridModel(int gridSize, TileRules rules)
         {
-            this.gridSize = Mathf.Max(1, gridSize);
             this.rules = rules;
         }
 
@@ -69,6 +69,21 @@ namespace projectsplippy
         public bool TryGetTile(Vector2Int cell, out TileData tile)
         {
             return tiles.TryGetValue(cell, out tile);
+        }
+
+        public TileType GetTileType(Vector2Int cell)
+        {
+            return tiles.TryGetValue(cell, out TileData tile) ? tile.Type : TileType.Filler;
+        }
+
+        public bool IsWalkable(Vector2Int cell)
+        {
+            if (!tiles.TryGetValue(cell, out TileData tile))
+            {
+                return false;
+            }
+
+            return tile.Type != TileType.Rock;
         }
 
         public TileLandingResult ProcessLanding(Vector2Int landedCell)
@@ -99,6 +114,9 @@ namespace projectsplippy
                     landed.IsPolluted = false;
                     landed.Progress = landed.MaxProgress;
                     landed.SanitationTimer = Mathf.Max(1, rules.sanitationTimeoutTurns);
+                    break;
+                case TileType.Filler:
+                case TileType.Rock:
                     break;
             }
 
@@ -185,6 +203,8 @@ namespace projectsplippy
         {
             switch (type)
             {
+                case TileType.Filler:
+                    return 0;
                 case TileType.Farmland:
                     return Mathf.Max(1, rules.farmlandMaxProgress);
                 case TileType.Ecosystem:
@@ -193,6 +213,8 @@ namespace projectsplippy
                     return Mathf.Max(1, rules.marineMaxProgress);
                 case TileType.Sanitation:
                     return 1;
+                case TileType.Rock:
+                    return 0;
                 default:
                     return 1;
             }

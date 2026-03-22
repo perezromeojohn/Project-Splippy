@@ -520,7 +520,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0}
   m_AnchorMax: {x: 0.5, y: 0}
-  m_AnchoredPosition: {x: 0, y: 7.7}
+  m_AnchoredPosition: {x: 0, y: 7.700012}
   m_SizeDelta: {x: 252.0099, y: 26.63321}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!114 &418684985
@@ -708,23 +708,41 @@ MonoBehaviour:
   buildGroundOnAwake: 1
   groundParent: {fileID: 1342870387}
   groundTilePrefab: {fileID: 1788029518980544163, guid: ea3b28b50c892f94cbc6bc93cc721734, type: 3}
-  tileHeight: 0.2
+  rockTopPrefabs:
+  - {fileID: 8819049739125824491, guid: 50fd7815e78803a4e890a295a1063f98, type: 3}
+  tileHeight: 1
   tileYOffset: -0.1
+  rockTopYOffset: 0.06
+  rockTopScale: {x: 0.5, y: 0.5, z: 0.5}
   groundMaterials:
   - type: 0
-    material: {fileID: 2100000, guid: a1e644f0733f36049b9d75a56bf8a1e3, type: 2}
+    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
   - type: 1
-    material: {fileID: 2100000, guid: a3ac6b14b626f4443b3e81600884fcd4, type: 2}
+    material: {fileID: 2100000, guid: a1e644f0733f36049b9d75a56bf8a1e3, type: 2}
   - type: 2
-    material: {fileID: 2100000, guid: b4ec87cdb74e82f4fa518c2d944db04e, type: 2}
+    material: {fileID: 2100000, guid: a3ac6b14b626f4443b3e81600884fcd4, type: 2}
   - type: 3
+    material: {fileID: 2100000, guid: b4ec87cdb74e82f4fa518c2d944db04e, type: 2}
+  - type: 4
     material: {fileID: 2100000, guid: 505c6eac00322fc4fab7dc98bdfce2cc, type: 2}
+  - type: 5
+    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
   tileRules:
-    farmlandMaxProgress: 0
-    ecosystemMaxProgress: 0
-    marineMaxProgress: 0
-    ecosystemDecayTurns: 0
-    sanitationTimeoutTurns: 0
+    farmlandMaxProgress: 3
+    ecosystemMaxProgress: 4
+    marineMaxProgress: 1
+    ecosystemDecayTurns: 1
+    sanitationTimeoutTurns: 1
+  replacementsPerTurn: 6
+  farmlandLockTurns: 4
+  rockChancePercent: 25
+  fillerPercent: 50
+  farmlandPercent: 32
+  marinePercent: 3
+  maxWaterReserve: 10
+  scorePerLanding: 1
+  scoreText: {fileID: 990908597}
+  waterText: {fileID: 418684985}
   splippy: {fileID: 761744921}
   moveDurationPerCell: 0.2
   splippyHeightOffset: 0.6
@@ -739,6 +757,9 @@ MonoBehaviour:
   tileTapDuration: 0.3
   tileLandingScaleMultiplier: 0.5
   tileLandingDuration: 0.2
+  tileReplaceFlipDuration: 0.22
+  tileReplaceFlipInEase: 26
+  tileReplaceFlipOutEase: 27
 --- !u!1 &761744917
 GameObject:
   m_ObjectHideFlags: 0
@@ -934,7 +955,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: -7.2}
+  m_AnchoredPosition: {x: 0, y: -7.200012}
   m_SizeDelta: {x: 252.0099, y: 26.6332}
   m_Pivot: {x: 0.5, y: 1}
 --- !u!114 &990908597
