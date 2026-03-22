@@ -270,6 +270,15 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
+                            bool isFinalHop = index == finalIndex;
+
+                            bool hopGameOver = runState != null && runState.ApplyHopCost(1, evaluateGameOver: !isFinalHop);
+
+                            if (hopGameOver)
+                            {
+                                isMoving = false;
+                                return;
+                            }
 
                             if (index == finalIndex)
                             {
@@ -302,7 +311,7 @@ namespace projectsplippy
             TileType landedType = tileBoardSystem.GetTileType(landedCell);
             BoardTurnResult turnResult = tileBoardSystem.ResolveEndTurn(landedCell);
 
-            bool isGameOver = runState != null && runState.ApplyLanding(landedType, turnResult.AdjacencyBonusScore);
+            bool isGameOver = runState != null && runState.ApplyLandingOutcome(landedType, turnResult.LandingResult, turnResult.AdjacencyClusterSize);
 
             if (isGameOver)
             {

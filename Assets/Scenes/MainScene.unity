@@ -701,8 +701,16 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7d93debc62eaa594ca7c8d59cd1d2f56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.RunStateController
-  maxWaterReserve: 10
-  scorePerLanding: 1
+  startingDroplets: 100
+  hopCost: 1
+  marineClearCost: 10
+  sanitationInfectCost: 10
+  pollutedSanitationClearReward: 5
+  marineClearReward: 20
+  singleClearReward: 5
+  chain2Reward: 15
+  chain3Reward: 25
+  chain4PlusReward: 40
   scoreText: {fileID: 990908597}
   waterText: {fileID: 418684985}
 --- !u!1 &729955185
@@ -1005,11 +1013,11 @@ MonoBehaviour:
     material: {fileID: 2100000, guid: 505c6eac00322fc4fab7dc98bdfce2cc, type: 2}
   - type: 5
     material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
-  tileTapScaleMultiplier: 1.08
-  tileTapDuration: 0.1
-  tileLandingScaleMultiplier: 0.9
-  tileLandingDuration: 0.08
-  tileReplaceFlipDuration: 0.22
+  tileTapScaleMultiplier: 1.3
+  tileTapDuration: 0.3
+  tileLandingScaleMultiplier: 0.6
+  tileLandingDuration: 0.2
+  tileReplaceFlipDuration: 0.5
   tileReplaceFlipInEase: 26
   tileReplaceFlipOutEase: 27
   showProgressRings: 0
