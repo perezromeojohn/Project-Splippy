@@ -38,6 +38,8 @@ namespace projectsplippy
     {
         public TileType LandedTileType;
         public TileLandingResult LandingResult;
+        public int AdjacencyClusterSize;
+        public int AdjacencyBonusScore;
         public readonly Dictionary<Vector2Int, TileType> ReplacedTiles = new Dictionary<Vector2Int, TileType>();
     }
 
@@ -99,6 +101,11 @@ namespace projectsplippy
             return model.IsWalkable(cell);
         }
 
+        public bool TryGetTile(Vector2Int cell, out TileData tile)
+        {
+            return model.TryGetTile(cell, out tile);
+        }
+
         public BoardTurnResult ResolveEndTurn(Vector2Int landedCell)
         {
             var result = new BoardTurnResult
@@ -106,6 +113,17 @@ namespace projectsplippy
                 LandedTileType = model.GetTileType(landedCell),
                 LandingResult = model.ProcessLanding(landedCell)
             };
+
+            result.AdjacencyClusterSize = CountConnectedSameType(landedCell, result.LandedTileType);
+            result.AdjacencyBonusScore = ComputeAdjacencyBonus(result.LandedTileType, result.AdjacencyClusterSize);
+
+            if (result.LandedTileType == TileType.Farmland && result.LandingResult.LandedCellBloomed)
+            {
+                TileType bloomReplacement = RollFarmlandBloomReplacement();
+                model.SetTileType(landedCell, bloomReplacement);
+                replaceLockTurns[landedCell] = 0;
+                result.ReplacedTiles[landedCell] = bloomReplacement;
+            }
 
             if (result.LandedTileType == TileType.Marine)
             {
@@ -164,6 +182,11 @@ namespace projectsplippy
                     TileType currentType = model.GetTileType(cell);
 
                     if (currentType == TileType.Marine)
+                    {
+                        continue;
+                    }
+
+                    if (currentType == TileType.Farmland && model.TryGetTile(cell, out TileData farmlandTile) && farmlandTile.Progress > 0)
                     {
                         continue;
                     }
@@ -279,6 +302,12 @@ namespace projectsplippy
             return RollWeightedTileType();
         }
 
+        private TileType RollFarmlandBloomReplacement()
+        {
+            // By design: when Farmland completes, replace to a neutral/non-refill, non-obstacle tile.
+            return TileType.Filler;
+        }
+
         private TileType RollNonMarineNonRockTileType()
         {
             float filler = Mathf.Max(0f, spawnWeights.fillerWeight);
@@ -326,6 +355,69 @@ namespace projectsplippy
                 int j = random.Next(0, i + 1);
                 (cells[i], cells[j]) = (cells[j], cells[i]);
             }
+        }
+
+        private int CountConnectedSameType(Vector2Int origin, TileType targetType)
+        {
+            if (!IsScoreableType(targetType))
+            {
+                return 0;
+            }
+
+            var visited = new bool[gridSize, gridSize];
+            var frontier = new Queue<Vector2Int>();
+            int clusterSize = 0;
+
+            frontier.Enqueue(origin);
+            visited[origin.x, origin.y] = true;
+
+            while (frontier.Count > 0)
+            {
+                Vector2Int current = frontier.Dequeue();
+
+                if (model.GetTileType(current) != targetType)
+                {
+                    continue;
+                }
+
+                clusterSize++;
+
+                for (int i = 0; i < CardinalDirections.Length; i++)
+                {
+                    Vector2Int next = current + CardinalDirections[i];
+
+                    if (next.x < 0 || next.y < 0 || next.x >= gridSize || next.y >= gridSize)
+                    {
+                        continue;
+                    }
+
+                    if (visited[next.x, next.y])
+                    {
+                        continue;
+                    }
+
+                    visited[next.x, next.y] = true;
+                    frontier.Enqueue(next);
+                }
+            }
+
+            return clusterSize;
+        }
+
+        private static bool IsScoreableType(TileType type)
+        {
+            return type != TileType.Filler && type != TileType.Rock;
+        }
+
+        private static int ComputeAdjacencyBonus(TileType landedType, int clusterSize)
+        {
+            if (!IsScoreableType(landedType) || clusterSize <= 1)
+            {
+                return 0;
+            }
+
+            int n = clusterSize - 1;
+            return n * n;
         }
 
         private static BoardTurnRules ResolveTurnRules(BoardTurnRules rules)

@@ -653,8 +653,58 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children:
   - {fileID: 729955186}
+  - {fileID: 958578407}
+  - {fileID: 642650712}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &642650711
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 642650712}
+  - component: {fileID: 642650713}
+  m_Layer: 0
+  m_Name: RunStateController
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &642650712
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 642650711}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 477535016}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &642650713
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 642650711}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7d93debc62eaa594ca7c8d59cd1d2f56, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.RunStateController
+  maxWaterReserve: 10
+  scorePerLanding: 1
+  scoreText: {fileID: 990908597}
+  waterText: {fileID: 418684985}
 --- !u!1 &729955185
 GameObject:
   m_ObjectHideFlags: 0
@@ -699,34 +749,14 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 491d21c08ced01a41a8a96e2176e24ac, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.GameManager
+  boardView: {fileID: 958578408}
+  runState: {fileID: 642650713}
   gridSize: 7
   cellSize: 1
   gridOrigin: {x: 0, y: 0, z: 0}
   inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   playerMapName: Player
   moveTowardsActionName: MoveTowards
-  buildGroundOnAwake: 1
-  groundParent: {fileID: 1342870387}
-  groundTilePrefab: {fileID: 1788029518980544163, guid: ea3b28b50c892f94cbc6bc93cc721734, type: 3}
-  rockTopPrefabs:
-  - {fileID: 8819049739125824491, guid: 50fd7815e78803a4e890a295a1063f98, type: 3}
-  tileHeight: 1
-  tileYOffset: -0.1
-  rockTopYOffset: 0.06
-  rockTopScale: {x: 0.5, y: 0.5, z: 0.5}
-  groundMaterials:
-  - type: 0
-    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
-  - type: 1
-    material: {fileID: 2100000, guid: a1e644f0733f36049b9d75a56bf8a1e3, type: 2}
-  - type: 2
-    material: {fileID: 2100000, guid: a3ac6b14b626f4443b3e81600884fcd4, type: 2}
-  - type: 3
-    material: {fileID: 2100000, guid: b4ec87cdb74e82f4fa518c2d944db04e, type: 2}
-  - type: 4
-    material: {fileID: 2100000, guid: 505c6eac00322fc4fab7dc98bdfce2cc, type: 2}
-  - type: 5
-    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
   tileRules:
     farmlandMaxProgress: 3
     ecosystemMaxProgress: 4
@@ -735,14 +765,10 @@ MonoBehaviour:
     sanitationTimeoutTurns: 1
   replacementsPerTurn: 6
   farmlandLockTurns: 4
-  rockChancePercent: 25
+  rockChancePercent: 15
   fillerPercent: 50
   farmlandPercent: 32
   marinePercent: 3
-  maxWaterReserve: 10
-  scorePerLanding: 1
-  scoreText: {fileID: 990908597}
-  waterText: {fileID: 418684985}
   splippy: {fileID: 761744921}
   moveDurationPerCell: 0.2
   splippyHeightOffset: 0.6
@@ -753,13 +779,6 @@ MonoBehaviour:
   splippySquashAmount: 0.14
   landingSettleDuration: 0.06
   landingSettleEase: 27
-  tileTapScaleMultiplier: 1.4
-  tileTapDuration: 0.3
-  tileLandingScaleMultiplier: 0.5
-  tileLandingDuration: 0.2
-  tileReplaceFlipDuration: 0.22
-  tileReplaceFlipInEase: 26
-  tileReplaceFlipOutEase: 27
 --- !u!1 &761744917
 GameObject:
   m_ObjectHideFlags: 0
@@ -921,6 +940,87 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &958578406
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 958578407}
+  - component: {fileID: 958578408}
+  m_Layer: 0
+  m_Name: TileBoardViewManager
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &958578407
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 958578406}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 477535016}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &958578408
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 958578406}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2422ad97637df6c4f9d662a62e1c0109, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.TileBoardView
+  groundParent: {fileID: 1342870387}
+  groundTilePrefab: {fileID: 1788029518980544163, guid: ea3b28b50c892f94cbc6bc93cc721734, type: 3}
+  rockTopPrefabs:
+  - {fileID: 8819049739125824491, guid: 50fd7815e78803a4e890a295a1063f98, type: 3}
+  tileHeight: 0.2
+  tileYOffset: -0.1
+  rockTopYOffset: 0.1
+  rockTopScale: {x: 0.5, y: 0.5, z: 0.5}
+  groundMaterials:
+  - type: 0
+    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
+  - type: 1
+    material: {fileID: 2100000, guid: a1e644f0733f36049b9d75a56bf8a1e3, type: 2}
+  - type: 2
+    material: {fileID: 2100000, guid: a3ac6b14b626f4443b3e81600884fcd4, type: 2}
+  - type: 3
+    material: {fileID: 2100000, guid: b4ec87cdb74e82f4fa518c2d944db04e, type: 2}
+  - type: 4
+    material: {fileID: 2100000, guid: 505c6eac00322fc4fab7dc98bdfce2cc, type: 2}
+  - type: 5
+    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
+  tileTapScaleMultiplier: 1.08
+  tileTapDuration: 0.1
+  tileLandingScaleMultiplier: 0.9
+  tileLandingDuration: 0.08
+  tileReplaceFlipDuration: 0.22
+  tileReplaceFlipInEase: 26
+  tileReplaceFlipOutEase: 27
+  showProgressRings: 0
+  ringYOffset: 0.5
+  ringRadius: 0.2
+  ringWidth: 1
+  ringSegments: 24
+  farmlandRingColor: {r: 0.43, g: 0.86, b: 0.35, a: 1}
+  ecosystemRingColor: {r: 0.18, g: 0.62, b: 0.28, a: 1}
+  sanitationRingColor: {r: 0.18, g: 0.78, b: 0.95, a: 1}
+  marineRingColor: {r: 0.2, g: 0.45, b: 1, a: 1}
 --- !u!1 &990908595
 GameObject:
   m_ObjectHideFlags: 0
