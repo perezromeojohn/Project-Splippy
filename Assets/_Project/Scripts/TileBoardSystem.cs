@@ -43,6 +43,22 @@ namespace projectsplippy
         public readonly Dictionary<Vector2Int, TileType> ReplacedTiles = new Dictionary<Vector2Int, TileType>();
     }
 
+    public sealed class TileStepResult
+    {
+        public Vector2Int Cell;
+        public TileType EnteredType;
+        public TileType CurrentType;
+        public TileLandingResult LandingResult;
+        public bool MarineConsumed;
+        public int ConnectedClusterSize;
+    }
+
+    public sealed class DroughtResult
+    {
+        public readonly List<Vector2Int> DehydratedCells = new List<Vector2Int>();
+        public readonly Dictionary<Vector2Int, TileType> ReplacedTiles = new Dictionary<Vector2Int, TileType>();
+    }
+
     public sealed class TileBoardSystem
     {
         private static readonly Vector2Int[] CardinalDirections =
@@ -104,6 +120,194 @@ namespace projectsplippy
         public bool TryGetTile(Vector2Int cell, out TileData tile)
         {
             return model.TryGetTile(cell, out tile);
+        }
+
+        public TileStepResult ProcessStep(Vector2Int cell)
+        {
+            TileType enteredType = model.GetTileType(cell);
+            TileLandingResult landingResult = model.ProcessLanding(cell);
+            int connectedClusterSize = CountConnectedSameType(cell, enteredType);
+
+            bool marineConsumed = enteredType == TileType.Marine;
+            bool farmlandCleared = enteredType == TileType.Farmland && landingResult.LandedCellBloomed;
+            bool sanitationCleared = enteredType == TileType.Sanitation && landingResult.LandedCellBloomed;
+
+            if (marineConsumed)
+            {
+                model.SetTileType(cell, TileType.Filler);
+            }
+            else if (farmlandCleared)
+            {
+                model.SetTileType(cell, TileType.Filler);
+            }
+            else if (sanitationCleared)
+            {
+                model.SetTileType(cell, TileType.Filler);
+            }
+
+            return new TileStepResult
+            {
+                Cell = cell,
+                EnteredType = enteredType,
+                CurrentType = model.GetTileType(cell),
+                LandingResult = landingResult,
+                MarineConsumed = marineConsumed,
+                ConnectedClusterSize = connectedClusterSize
+            };
+        }
+
+        public List<Vector2Int> SpawnSanitationAfterMove(float chancePerFillerTile, int maxSpawns, Vector2Int? protectedCell = null)
+        {
+            float clampedChance = Mathf.Clamp01(chancePerFillerTile);
+            int allowedSpawns = Mathf.Max(0, maxSpawns);
+            var spawned = new List<Vector2Int>();
+
+            if (allowedSpawns <= 0 || clampedChance <= 0f)
+            {
+                return spawned;
+            }
+
+            var candidates = new List<Vector2Int>();
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    var cell = new Vector2Int(x, y);
+
+                    if (protectedCell.HasValue && cell == protectedCell.Value)
+                    {
+                        continue;
+                    }
+
+                    if (model.GetTileType(cell) == TileType.Filler)
+                    {
+                        candidates.Add(cell);
+                    }
+                }
+            }
+
+            Shuffle(candidates);
+
+            for (int i = 0; i < candidates.Count && spawned.Count < allowedSpawns; i++)
+            {
+                if (Random01() > clampedChance)
+                {
+                    continue;
+                }
+
+                Vector2Int cell = candidates[i];
+                model.SetTileType(cell, TileType.Sanitation);
+                spawned.Add(cell);
+            }
+
+            return spawned;
+        }
+
+        public List<Vector2Int> SpreadSanitationToAdjacent(IReadOnlyList<Vector2Int> sourceCells, Vector2Int? protectedCell = null)
+        {
+            var spread = new List<Vector2Int>();
+
+            if (sourceCells == null || sourceCells.Count == 0)
+            {
+                return spread;
+            }
+
+            var unique = new HashSet<Vector2Int>();
+
+            for (int i = 0; i < sourceCells.Count; i++)
+            {
+                Vector2Int source = sourceCells[i];
+
+                for (int d = 0; d < CardinalDirections.Length; d++)
+                {
+                    Vector2Int next = source + CardinalDirections[d];
+
+                    if (next.x < 0 || next.y < 0 || next.x >= gridSize || next.y >= gridSize)
+                    {
+                        continue;
+                    }
+
+                    if (protectedCell.HasValue && next == protectedCell.Value)
+                    {
+                        continue;
+                    }
+
+                    if (model.GetTileType(next) != TileType.Filler)
+                    {
+                        continue;
+                    }
+
+                    if (!unique.Add(next))
+                    {
+                        continue;
+                    }
+
+                    model.SetTileType(next, TileType.Sanitation);
+                    spread.Add(next);
+                }
+            }
+
+            return spread;
+        }
+
+        public DroughtResult ApplyDrought(Vector2Int? protectedCell, int hydrationLoss, int newTilesCount)
+        {
+            var result = new DroughtResult();
+            result.DehydratedCells.AddRange(model.ReduceHydrationAll(hydrationLoss));
+
+            int targetCount = Mathf.Max(0, newTilesCount);
+
+            if (targetCount <= 0)
+            {
+                return result;
+            }
+
+            var candidates = new List<Vector2Int>();
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    Vector2Int cell = new Vector2Int(x, y);
+
+                    if (protectedCell.HasValue && cell == protectedCell.Value)
+                    {
+                        continue;
+                    }
+
+                    if (model.GetTileType(cell) == TileType.Rock)
+                    {
+                        continue;
+                    }
+
+                    if (model.TryGetTile(cell, out TileData tile) && tile.Progress > 0)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(cell);
+                }
+            }
+
+            Shuffle(candidates);
+
+            for (int i = 0; i < candidates.Count && result.ReplacedTiles.Count < targetCount; i++)
+            {
+                Vector2Int cell = candidates[i];
+                TileType oldType = model.GetTileType(cell);
+                TileType newType = RollWeightedTileType();
+
+                if (newType == oldType)
+                {
+                    continue;
+                }
+
+                model.SetTileType(cell, newType);
+                result.ReplacedTiles[cell] = newType;
+            }
+
+            return result;
         }
 
         public BoardTurnResult ResolveEndTurn(Vector2Int landedCell)

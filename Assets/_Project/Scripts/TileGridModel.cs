@@ -135,6 +135,42 @@ namespace projectsplippy
             return result;
         }
 
+        public List<Vector2Int> ReduceHydrationAll(int amount)
+        {
+            int delta = Mathf.Max(0, amount);
+            var changedCells = new List<Vector2Int>();
+
+            if (delta <= 0)
+            {
+                return changedCells;
+            }
+
+            var keys = new List<Vector2Int>(tiles.Keys);
+
+            for (int i = 0; i < keys.Count; i++)
+            {
+                Vector2Int cell = keys[i];
+                TileData tile = tiles[cell];
+
+                if (tile.Progress <= 0)
+                {
+                    continue;
+                }
+
+                int before = tile.Progress;
+                tile.Progress = Mathf.Max(0, tile.Progress - delta);
+
+                if (tile.Progress != before)
+                {
+                    changedCells.Add(cell);
+                }
+
+                tiles[cell] = tile;
+            }
+
+            return changedCells;
+        }
+
         private void AdvanceDecayAndTimers(Vector2Int landedCell, TileLandingResult result)
         {
             var keys = new List<Vector2Int>(tiles.Keys);

@@ -702,15 +702,13 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.RunStateController
   startingDroplets: 100
+  maxDroplets: 100
   hopCost: 1
-  marineClearCost: 10
   sanitationInfectCost: 10
-  pollutedSanitationClearReward: 5
-  marineClearReward: 20
-  singleClearReward: 5
-  chain2Reward: 15
-  chain3Reward: 25
-  chain4PlusReward: 40
+  farmlandBloomReward: 5
+  ecosystemBloomReward: 10
+  sanitationBloomReward: 5
+  marineStepReward: 20
   scoreText: {fileID: 990908597}
   waterText: {fileID: 418684985}
 --- !u!1 &729955185
@@ -777,6 +775,9 @@ MonoBehaviour:
   fillerPercent: 50
   farmlandPercent: 32
   marinePercent: 3
+  droughtEveryTurns: 5
+  droughtHydrationLoss: 1
+  droughtNewTilesCount: 12
   splippy: {fileID: 761744921}
   moveDurationPerCell: 0.2
   splippyHeightOffset: 0.6
@@ -993,26 +994,22 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.TileBoardView
   groundParent: {fileID: 1342870387}
-  groundTilePrefab: {fileID: 1788029518980544163, guid: ea3b28b50c892f94cbc6bc93cc721734, type: 3}
-  rockTopPrefabs:
-  - {fileID: 8819049739125824491, guid: 50fd7815e78803a4e890a295a1063f98, type: 3}
-  tileHeight: 0.2
-  tileYOffset: -0.1
-  rockTopYOffset: 0.1
-  rockTopScale: {x: 0.5, y: 0.5, z: 0.5}
-  groundMaterials:
+  fallbackGroundTilePrefab: {fileID: 0}
+  tilePrefabs:
   - type: 0
-    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
+    prefab: {fileID: 6485958818215022136, guid: eb8f79f4a67943a448f3f9df8772c35b, type: 3}
   - type: 1
-    material: {fileID: 2100000, guid: a1e644f0733f36049b9d75a56bf8a1e3, type: 2}
+    prefab: {fileID: 1003852824644336638, guid: 5e39cf89243279043a9e1fe9bd953860, type: 3}
   - type: 2
-    material: {fileID: 2100000, guid: a3ac6b14b626f4443b3e81600884fcd4, type: 2}
+    prefab: {fileID: 1044896772897023657, guid: e064efa9fe4dfb54aa6a2a835e057e0c, type: 3}
   - type: 3
-    material: {fileID: 2100000, guid: b4ec87cdb74e82f4fa518c2d944db04e, type: 2}
+    prefab: {fileID: 4300521981809138703, guid: c369398b1d977e24e9f1f8684558d172, type: 3}
   - type: 4
-    material: {fileID: 2100000, guid: 505c6eac00322fc4fab7dc98bdfce2cc, type: 2}
+    prefab: {fileID: 8294655559294444476, guid: 34210a06588416d498d8508409531e79, type: 3}
   - type: 5
-    material: {fileID: 2100000, guid: a23731f145097404497e6dae1a336cf5, type: 2}
+    prefab: {fileID: 6902261625229823188, guid: 6d0c9c2a022ca394cb6da1640b4af4d2, type: 3}
+  tileYOffset: -0.1
+  groundTopYOffset: 0.1
   tileTapScaleMultiplier: 1.3
   tileTapDuration: 0.3
   tileLandingScaleMultiplier: 0.6
@@ -1020,6 +1017,10 @@ MonoBehaviour:
   tileReplaceFlipDuration: 0.5
   tileReplaceFlipInEase: 26
   tileReplaceFlipOutEase: 27
+  spreadPulseScaleMultiplier: 1.2
+  spreadPulseDuration: 0.12
+  hydrationLevelPulseDuration: 0.1
+  hydrationLevelPulseScaleMultiplier: 1.2
   showProgressRings: 0
   ringYOffset: 0.5
   ringRadius: 0.2

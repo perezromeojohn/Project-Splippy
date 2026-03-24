@@ -6,45 +6,55 @@ namespace projectsplippy
     public class RunStateController : MonoBehaviour
     {
         [Header("Run")]
-        [SerializeField] private int startingDroplets = 10;
+        [SerializeField] private int startingDroplets = 100;
+        [SerializeField] private int maxDroplets = 100;
 
         [Header("Droplet Costs")]
         [SerializeField] private int hopCost = 1;
-        [SerializeField] private int marineClearCost = 10;
         [SerializeField] private int sanitationInfectCost = 10;
 
         [Header("Droplet Rewards")]
-        [SerializeField] private int pollutedSanitationClearReward = 5;
-        [SerializeField] private int marineClearReward = 20;
-        [SerializeField] private int singleClearReward = 5;
-        [SerializeField] private int chain2Reward = 15;
-        [SerializeField] private int chain3Reward = 25;
-        [SerializeField] private int chain4PlusReward = 40;
+        [SerializeField] private int farmlandBloomReward = 5;
+        [SerializeField] private int ecosystemBloomReward = 10;
+        [SerializeField] private int sanitationBloomReward = 5;
+        [SerializeField] private int marineStepReward = 20;
+
+        [Header("Score")]
+        [SerializeField] private int clearAnyTileScore = 5;
+        [SerializeField] private int pollutedSanitationClearScore = 5;
+        [SerializeField] private int marineClearScore = 20;
+        [SerializeField] private int chain2Score = 15;
+        [SerializeField] private int chain3Score = 25;
+        [SerializeField] private int chain4PlusScore = 40;
 
         [Header("UI")]
         [SerializeField] private TMP_Text scoreText;
         [SerializeField] private TMP_Text waterText;
 
         public bool IsGameOver { get; private set; }
-        public int CurrentScore { get; private set; }
         public int CurrentWaterReserve { get; private set; }
+        public int CurrentScore { get; private set; }
 
         public void Initialize()
         {
             startingDroplets = Mathf.Max(1, startingDroplets);
+            maxDroplets = Mathf.Max(startingDroplets, maxDroplets);
             hopCost = Mathf.Max(0, hopCost);
-            marineClearCost = Mathf.Max(0, marineClearCost);
             sanitationInfectCost = Mathf.Max(0, sanitationInfectCost);
-            pollutedSanitationClearReward = Mathf.Max(0, pollutedSanitationClearReward);
-            marineClearReward = Mathf.Max(0, marineClearReward);
-            singleClearReward = Mathf.Max(0, singleClearReward);
-            chain2Reward = Mathf.Max(0, chain2Reward);
-            chain3Reward = Mathf.Max(0, chain3Reward);
-            chain4PlusReward = Mathf.Max(0, chain4PlusReward);
+            farmlandBloomReward = Mathf.Max(0, farmlandBloomReward);
+            ecosystemBloomReward = Mathf.Max(0, ecosystemBloomReward);
+            sanitationBloomReward = Mathf.Max(0, sanitationBloomReward);
+            marineStepReward = Mathf.Max(0, marineStepReward);
+            clearAnyTileScore = Mathf.Max(0, clearAnyTileScore);
+            pollutedSanitationClearScore = Mathf.Max(0, pollutedSanitationClearScore);
+            marineClearScore = Mathf.Max(0, marineClearScore);
+            chain2Score = Mathf.Max(0, chain2Score);
+            chain3Score = Mathf.Max(0, chain3Score);
+            chain4PlusScore = Mathf.Max(0, chain4PlusScore);
 
             IsGameOver = false;
-            CurrentScore = 0;
             CurrentWaterReserve = startingDroplets;
+            CurrentScore = 0;
             RefreshHud();
         }
 
@@ -57,7 +67,6 @@ namespace projectsplippy
 
             int hopCount = Mathf.Max(1, hops);
             CurrentWaterReserve -= hopCount * hopCost;
-            CurrentScore -= hopCount * hopCost;
             RefreshHud();
 
             if (evaluateGameOver && CurrentWaterReserve <= 0)
@@ -68,7 +77,7 @@ namespace projectsplippy
             return IsGameOver;
         }
 
-        public bool ApplyLandingOutcome(TileType landedType, TileLandingResult landingResult, int chainSize)
+        public bool ApplyStepOutcome(TileType enteredType, TileLandingResult landingResult, bool marineConsumed, int connectedClusterSize)
         {
             if (IsGameOver)
             {
@@ -76,32 +85,64 @@ namespace projectsplippy
             }
 
             int delta = 0;
+            int scoreDelta = 0;
+            bool isFarmOrEcoStep = enteredType == TileType.Farmland || enteredType == TileType.Ecosystem;
+            bool clearedThisStep = marineConsumed;
+            bool canScore = enteredType != TileType.Filler && enteredType != TileType.Rock;
 
             if (landingResult != null)
             {
-                delta -= Mathf.Max(0, landingResult.PollutedCells.Count) * sanitationInfectCost;
+                if (!isFarmOrEcoStep)
+                {
+                    delta -= Mathf.Max(0, landingResult.PollutedCells.Count) * sanitationInfectCost;
+                }
 
                 if (landingResult.LandedCellBloomed)
                 {
-                    delta += singleClearReward;
+                    clearedThisStep = true;
 
-                    if (landedType == TileType.Sanitation && landingResult.LandedCellWasPolluted)
+                    switch (enteredType)
                     {
-                        delta += pollutedSanitationClearReward;
+                        case TileType.Farmland:
+                            delta += farmlandBloomReward;
+                            break;
+                        case TileType.Ecosystem:
+                            delta += ecosystemBloomReward;
+                            break;
+                        case TileType.Sanitation:
+                            delta += sanitationBloomReward;
+                            break;
                     }
 
-                    if (landedType == TileType.Marine)
+                    if (canScore)
                     {
-                        delta -= marineClearCost;
-                        delta += marineClearReward;
+                        scoreDelta += clearAnyTileScore;
                     }
 
-                    delta += GetChainReward(chainSize);
+                    if (enteredType == TileType.Sanitation && landingResult.LandedCellWasPolluted)
+                    {
+                        scoreDelta += pollutedSanitationClearScore;
+                    }
                 }
             }
 
-            CurrentWaterReserve += delta;
-            CurrentScore += delta;
+            if (marineConsumed)
+            {
+                delta += marineStepReward;
+
+                if (canScore)
+                {
+                    scoreDelta += marineClearScore;
+                }
+            }
+
+            if (clearedThisStep && canScore)
+            {
+                scoreDelta += GetChainScore(connectedClusterSize);
+            }
+
+            CurrentWaterReserve = Mathf.Clamp(CurrentWaterReserve + delta, 0, maxDroplets);
+            CurrentScore += Mathf.Max(0, scoreDelta);
             RefreshHud();
 
             if (CurrentWaterReserve <= 0)
@@ -112,21 +153,21 @@ namespace projectsplippy
             return IsGameOver;
         }
 
-        private int GetChainReward(int chainSize)
+        private int GetChainScore(int clusterSize)
         {
-            if (chainSize >= 4)
+            if (clusterSize >= 4)
             {
-                return chain4PlusReward;
+                return chain4PlusScore;
             }
 
-            if (chainSize == 3)
+            if (clusterSize == 3)
             {
-                return chain3Reward;
+                return chain3Score;
             }
 
-            if (chainSize == 2)
+            if (clusterSize == 2)
             {
-                return chain2Reward;
+                return chain2Score;
             }
 
             return 0;
@@ -151,7 +192,7 @@ namespace projectsplippy
         {
             if (scoreText != null)
             {
-                scoreText.text = $"Net: {CurrentScore}";
+                scoreText.text = $"Score: {CurrentScore}";
             }
 
             if (waterText != null)

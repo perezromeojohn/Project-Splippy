@@ -34,6 +34,11 @@ namespace projectsplippy
         [SerializeField, Range(0, 100)] private int farmlandPercent = 32;
         [SerializeField, Range(0, 100)] private int marinePercent = 8;
 
+        [Header("Drought")]
+        [SerializeField, Min(1)] private int droughtEveryTurns = 5;
+        [SerializeField, Min(0)] private int droughtHydrationLoss = 1;
+        [SerializeField, Min(0)] private int droughtNewTilesCount = 3;
+
         [Header("Player")]
         [SerializeField] private Transform splippy;
         [SerializeField] private float moveDurationPerCell = 0.12f;
@@ -49,10 +54,12 @@ namespace projectsplippy
         private Camera mainCamera;
         private InputAction moveTowardsAction;
         private TileBoardSystem tileBoardSystem;
+        private readonly List<Vector2Int> clearedSanitationSources = new List<Vector2Int>();
 
         private Vector2Int currentCell;
         private bool isMoving;
         private Vector3 splippyBaseScale = Vector3.one;
+        private int completedTurns;
 
         private void Awake()
         {
@@ -95,6 +102,7 @@ namespace projectsplippy
 
             tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildBoardTurnRules(), BuildSpawnWeights());
             tileBoardSystem.InitializeBoard(currentCell);
+            completedTurns = 0;
 
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem);
             runState.Initialize();
@@ -233,6 +241,7 @@ namespace projectsplippy
                 return;
             }
 
+            clearedSanitationSources.Clear();
             isMoving = true;
             MoveAlongPath(path, 1, path.Count - 1);
         }
@@ -241,6 +250,7 @@ namespace projectsplippy
         {
             if (index >= path.Count)
             {
+                ResolvePostMoveEvents();
                 isMoving = false;
                 return;
             }
@@ -270,9 +280,7 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
-                            bool isFinalHop = index == finalIndex;
-
-                            bool hopGameOver = runState != null && runState.ApplyHopCost(1, evaluateGameOver: !isFinalHop);
+                            bool hopGameOver = runState != null && runState.ApplyHopCost(1, evaluateGameOver: false);
 
                             if (hopGameOver)
                             {
@@ -280,13 +288,49 @@ namespace projectsplippy
                                 return;
                             }
 
-                            if (index == finalIndex)
+                            if (tileBoardSystem != null)
                             {
-                                ResolveTurnAtDestination(nextCell);
-                            }
-                            else
-                            {
+                                TileStepResult stepResult = tileBoardSystem.ProcessStep(nextCell);
+                                bool stepGameOver = runState != null && runState.ApplyStepOutcome(
+                                    stepResult.EnteredType,
+                                    stepResult.LandingResult,
+                                    stepResult.MarineConsumed,
+                                    stepResult.ConnectedClusterSize);
+
+                                if (stepResult.EnteredType == TileType.Sanitation && stepResult.LandingResult.LandedCellBloomed)
+                                {
+                                    clearedSanitationSources.Add(nextCell);
+                                }
+
+                                if (stepResult.LandingResult.LandedCellBloomed)
+                                {
+                                    boardView.PlayTileTapFeedback(nextCell);
+                                }
+
                                 boardView.PlayTileLandingFeedback(nextCell);
+
+                                for (int i = 0; i < stepResult.LandingResult.DecayedCells.Count; i++)
+                                {
+                                    boardView.PlayTileLandingFeedback(stepResult.LandingResult.DecayedCells[i]);
+                                }
+
+                                for (int i = 0; i < stepResult.LandingResult.PollutedCells.Count; i++)
+                                {
+                                    boardView.PlayTileLandingFeedback(stepResult.LandingResult.PollutedCells[i]);
+                                }
+
+                                if (stepResult.CurrentType != stepResult.EnteredType)
+                                {
+                                    boardView.PlayTileReplacementFlip(nextCell, stepResult.CurrentType);
+                                }
+
+                                boardView.RefreshProgressVisuals(tileBoardSystem);
+
+                                if (stepGameOver)
+                                {
+                                    isMoving = false;
+                                    return;
+                                }
                             }
 
                             if (runState != null && runState.IsGameOver)
@@ -301,46 +345,47 @@ namespace projectsplippy
                 });
         }
 
-        private void ResolveTurnAtDestination(Vector2Int landedCell)
+        private void ResolvePostMoveEvents()
         {
             if (tileBoardSystem == null)
             {
                 return;
             }
 
-            TileType landedType = tileBoardSystem.GetTileType(landedCell);
-            BoardTurnResult turnResult = tileBoardSystem.ResolveEndTurn(landedCell);
+            List<Vector2Int> spawnedSanitation = tileBoardSystem.SpreadSanitationToAdjacent(clearedSanitationSources, currentCell);
+            clearedSanitationSources.Clear();
 
-            bool isGameOver = runState != null && runState.ApplyLandingOutcome(landedType, turnResult.LandingResult, turnResult.AdjacencyClusterSize);
-
-            if (isGameOver)
+            for (int i = 0; i < spawnedSanitation.Count; i++)
             {
-                return;
+                boardView.PlayTileReplacementFlip(spawnedSanitation[i], TileType.Sanitation, pulseAfterReplace: true);
             }
 
-            if (turnResult.LandingResult.LandedCellBloomed)
+            if (spawnedSanitation.Count > 0)
             {
-                boardView.PlayTileTapFeedback(landedCell);
+                boardView.RefreshProgressVisuals(tileBoardSystem);
             }
 
-            boardView.PlayTileLandingFeedback(landedCell);
+            completedTurns++;
 
-            for (int i = 0; i < turnResult.LandingResult.DecayedCells.Count; i++)
+            if (droughtEveryTurns > 0 && completedTurns % droughtEveryTurns == 0)
             {
-                boardView.PlayTileLandingFeedback(turnResult.LandingResult.DecayedCells[i]);
-            }
+                DroughtResult drought = tileBoardSystem.ApplyDrought(currentCell, droughtHydrationLoss, droughtNewTilesCount);
 
-            for (int i = 0; i < turnResult.LandingResult.PollutedCells.Count; i++)
-            {
-                boardView.PlayTileLandingFeedback(turnResult.LandingResult.PollutedCells[i]);
-            }
+                for (int i = 0; i < drought.DehydratedCells.Count; i++)
+                {
+                    boardView.PlayTileLandingFeedback(drought.DehydratedCells[i]);
+                }
 
-            foreach (KeyValuePair<Vector2Int, TileType> replacement in turnResult.ReplacedTiles)
-            {
-                boardView.PlayTileReplacementFlip(replacement.Key, replacement.Value);
-            }
+                foreach (KeyValuePair<Vector2Int, TileType> replacement in drought.ReplacedTiles)
+                {
+                    boardView.PlayTileReplacementFlip(replacement.Key, replacement.Value);
+                }
 
-            boardView.RefreshProgressVisuals(tileBoardSystem);
+                if (drought.DehydratedCells.Count > 0 || drought.ReplacedTiles.Count > 0)
+                {
+                    boardView.RefreshProgressVisuals(tileBoardSystem);
+                }
+            }
         }
 
         private bool IsCellWalkable(Vector2Int cell)
