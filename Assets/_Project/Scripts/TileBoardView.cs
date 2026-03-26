@@ -59,10 +59,23 @@ namespace projectsplippy
         [SerializeField] private Color sanitationRingColor = new Color(0.18f, 0.78f, 0.95f, 1f);
         [SerializeField] private Color marineRingColor = new Color(0.2f, 0.45f, 1f, 1f);
 
+        [Header("Hover Preview")]
+        [SerializeField] private bool showHoverPathPreview = true;
+        [SerializeField] private Material hoverPreviewMaterial;
+        [SerializeField] private Color hoverPreviewColor = new Color(0.2f, 0.95f, 1f, 0.72f);
+        [SerializeField] private Color hoverPreviewDestinationColor = new Color(1f, 0.95f, 0.35f, 0.85f);
+        [SerializeField] private float hoverPreviewYOffset = 0.03f;
+        [SerializeField] private float hoverPreviewSize = 0.8f;
+        [SerializeField] private float hoverPreviewDestinationSize = 1.02f;
+
         public float GroundTopYOffset => tileYOffset + groundTopYOffset;
 
         private readonly Dictionary<TileType, GameObject> prefabByType = new Dictionary<TileType, GameObject>();
         private readonly Dictionary<Vector2Int, TileVisual> tileVisuals = new Dictionary<Vector2Int, TileVisual>();
+        private readonly List<GameObject> hoverPreviewMarkers = new List<GameObject>();
+        private MaterialPropertyBlock hoverMarkerPropertyBlock;
+
+        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
 
         private int gridSize;
         private float cellSize;
@@ -88,6 +101,7 @@ namespace projectsplippy
             CachePrefabs();
             EnsureGroundParent();
             StopAllVisualTweens();
+            ClearHoverPathPreview();
             ClearExistingGround();
             tileVisuals.Clear();
 
@@ -115,6 +129,58 @@ namespace projectsplippy
             }
 
             RefreshProgressVisuals(boardSystem);
+        }
+
+        public void ShowHoverPathPreview(IReadOnlyList<Vector2Int> path)
+        {
+            if (!showHoverPathPreview || path == null || path.Count <= 1)
+            {
+                ClearHoverPathPreview();
+                return;
+            }
+
+            EnsureHoverMarkerCount(path.Count - 1);
+
+            for (int i = 1; i < path.Count; i++)
+            {
+                GameObject marker = hoverPreviewMarkers[i - 1];
+                Vector2Int cell = path[i];
+                bool isDestination = i == path.Count - 1;
+                float sizeFactor = isDestination ? hoverPreviewDestinationSize : hoverPreviewSize;
+                float markerY = GetCellTopY(cell) + hoverPreviewYOffset;
+
+                marker.SetActive(true);
+                marker.transform.position = new Vector3(CellToWorld(cell).x, markerY, CellToWorld(cell).z);
+                marker.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+                marker.transform.localScale = Vector3.one * (cellSize * sizeFactor);
+
+                Renderer renderer = marker.GetComponent<Renderer>();
+
+                if (renderer != null)
+                {
+                    Color tint = isDestination ? hoverPreviewDestinationColor : hoverPreviewColor;
+                    MaterialPropertyBlock block = GetHoverMarkerPropertyBlock();
+                    renderer.GetPropertyBlock(block);
+                    block.SetColor(BaseColorProperty, tint);
+                    renderer.SetPropertyBlock(block);
+                }
+            }
+
+            for (int i = path.Count - 1; i < hoverPreviewMarkers.Count; i++)
+            {
+                hoverPreviewMarkers[i].SetActive(false);
+            }
+        }
+
+        public void ClearHoverPathPreview()
+        {
+            for (int i = 0; i < hoverPreviewMarkers.Count; i++)
+            {
+                if (hoverPreviewMarkers[i] != null)
+                {
+                    hoverPreviewMarkers[i].SetActive(false);
+                }
+            }
         }
 
         public IEnumerator PlayMaterializeRise(Vector2 startYOffsetRange, float totalDuration)
@@ -377,6 +443,102 @@ namespace projectsplippy
                     visual.levelTween.Stop();
                 }
             }
+        }
+
+        private void EnsureHoverMarkerCount(int count)
+        {
+            int desired = Mathf.Max(0, count);
+
+            while (hoverPreviewMarkers.Count < desired)
+            {
+                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Quad);
+                marker.name = "HoverPathMarker";
+                marker.transform.SetParent(groundParent, true);
+
+                Collider collider = marker.GetComponent<Collider>();
+
+                if (collider != null)
+                {
+                    Destroy(collider);
+                }
+
+                Renderer renderer = marker.GetComponent<Renderer>();
+
+                if (renderer != null)
+                {
+                    renderer.sharedMaterial = ResolveHoverPreviewMaterial();
+                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    renderer.receiveShadows = false;
+                }
+
+                marker.SetActive(false);
+                hoverPreviewMarkers.Add(marker);
+            }
+        }
+
+        private Material ResolveHoverPreviewMaterial()
+        {
+            if (hoverPreviewMaterial != null)
+            {
+                return hoverPreviewMaterial;
+            }
+
+            Shader shader = Shader.Find("ProjectSplippy/HoverPathPreview");
+
+            if (shader == null)
+            {
+                shader = Shader.Find("Universal Render Pipeline/Unlit");
+            }
+
+            hoverPreviewMaterial = new Material(shader);
+            hoverPreviewMaterial.SetColor(BaseColorProperty, hoverPreviewColor);
+            return hoverPreviewMaterial;
+        }
+
+        private float GetCellTopY(Vector2Int cell)
+        {
+            if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual.transform == null)
+            {
+                return CellToWorld(cell).y + GroundTopYOffset;
+            }
+
+            Renderer[] renderers = visual.transform.GetComponentsInChildren<Renderer>();
+
+            if (renderers == null || renderers.Length == 0)
+            {
+                return CellToWorld(cell).y + GroundTopYOffset;
+            }
+
+            float maxY = float.MinValue;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+
+                if (r == null)
+                {
+                    continue;
+                }
+
+                maxY = Mathf.Max(maxY, r.bounds.max.y);
+            }
+
+            if (maxY == float.MinValue)
+            {
+                return CellToWorld(cell).y + GroundTopYOffset;
+            }
+
+            return maxY;
+        }
+
+        private MaterialPropertyBlock GetHoverMarkerPropertyBlock()
+        {
+            if (hoverMarkerPropertyBlock == null)
+            {
+                hoverMarkerPropertyBlock = new MaterialPropertyBlock();
+            }
+
+            return hoverMarkerPropertyBlock;
         }
 
         private void CacheHydrationLevelObjects(TileVisual visual)

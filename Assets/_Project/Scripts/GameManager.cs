@@ -147,24 +147,30 @@ namespace projectsplippy
         private void OnDisable()
         {
             moveTowardsAction?.Disable();
+            boardView?.ClearHoverPathPreview();
         }
 
         private void Update()
         {
             if (isMoving)
             {
+                boardView.ClearHoverPathPreview();
                 return;
             }
 
             if (currentPhase != GamePhase.Lobby && currentPhase != GamePhase.Gameplay)
             {
+                boardView.ClearHoverPathPreview();
                 return;
             }
 
             if (currentPhase == GamePhase.Gameplay && runState != null && runState.IsGameOver)
             {
+                boardView.ClearHoverPathPreview();
                 return;
             }
+
+            UpdateHoverPathPreview();
 
             if (moveTowardsAction == null || !moveTowardsAction.WasPressedThisFrame())
             {
@@ -189,6 +195,41 @@ namespace projectsplippy
             }
 
             MoveToCell(clickedCell);
+        }
+
+        private void UpdateHoverPathPreview()
+        {
+            if (currentPhase != GamePhase.Gameplay)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (!TryGetPointerScreenPosition(out Vector2 pointerScreenPosition))
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (!TryGetClickedCell(pointerScreenPosition, out Vector2Int hoveredCell))
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (hoveredCell == currentCell)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, hoveredCell, IsCellWalkable, out List<Vector2Int> previewPath) || previewPath.Count <= 1)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            boardView.ShowHoverPathPreview(previewPath);
         }
 
         public void ConfigureLobby(
@@ -354,6 +395,8 @@ namespace projectsplippy
 
         private void MoveToCell(Vector2Int targetCell)
         {
+            boardView.ClearHoverPathPreview();
+
             if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, targetCell, IsCellWalkable, out List<Vector2Int> path))
             {
                 return;

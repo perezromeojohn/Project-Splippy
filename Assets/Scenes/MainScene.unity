@@ -1039,6 +1039,13 @@ MonoBehaviour:
   ecosystemRingColor: {r: 0.18, g: 0.62, b: 0.28, a: 1}
   sanitationRingColor: {r: 0.18, g: 0.78, b: 0.95, a: 1}
   marineRingColor: {r: 0.2, g: 0.45, b: 1, a: 1}
+  showHoverPathPreview: 1
+  hoverPreviewMaterial: {fileID: 2100000, guid: 66477ee559f24b1429e7f3332a28468f, type: 2}
+  hoverPreviewColor: {r: 0.2, g: 0.95, b: 1, a: 0.72}
+  hoverPreviewDestinationColor: {r: 1, g: 0.95, b: 0.35, a: 0.85}
+  hoverPreviewYOffset: 0.03
+  hoverPreviewSize: 0.8
+  hoverPreviewDestinationSize: 1.02
 --- !u!1 &990908595
 GameObject:
   m_ObjectHideFlags: 0
@@ -1365,8 +1372,7 @@ MonoBehaviour:
   settingsTilePrefab: {fileID: 1044896772897023657, guid: e064efa9fe4dfb54aa6a2a835e057e0c, type: 3}
   creditsTilePrefab: {fileID: 1044896772897023657, guid: e064efa9fe4dfb54aa6a2a835e057e0c, type: 3}
   startGameTilePrefab: {fileID: 1044896772897023657, guid: e064efa9fe4dfb54aa6a2a835e057e0c, type: 3}
-  materializeStartYOffset: -20
-  materializeDuration: 2
+  bloomRingStepDelay: 0.18
   countdownStart: 3
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
