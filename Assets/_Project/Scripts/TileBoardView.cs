@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using PrimeTween;
 using UnityEngine;
 
@@ -45,6 +46,7 @@ namespace projectsplippy
         [SerializeField] private float spreadPulseDuration = 0.12f;
         [SerializeField] private float hydrationLevelPulseDuration = 0.1f;
         [SerializeField] private float hydrationLevelPulseScaleMultiplier = 1.2f;
+        [SerializeField] private Ease materializeRiseEase = Ease.OutCubic;
 
         [Header("Progress Ring")]
         [SerializeField] private bool showProgressRings = false;
@@ -68,12 +70,24 @@ namespace projectsplippy
 
         public void BuildBoard(int gridSize, float cellSize, Vector3 gridCenter, TileBoardSystem boardSystem)
         {
+            BuildBoard(gridSize, cellSize, gridCenter, boardSystem, null, null);
+        }
+
+        public void BuildBoard(
+            int gridSize,
+            float cellSize,
+            Vector3 gridCenter,
+            TileBoardSystem boardSystem,
+            HashSet<Vector2Int> includedCells,
+            Dictionary<Vector2Int, GameObject> cellPrefabOverrides)
+        {
             this.gridSize = gridSize;
             this.cellSize = Mathf.Max(0.1f, cellSize);
             this.gridCenter = gridCenter;
 
             CachePrefabs();
             EnsureGroundParent();
+            StopAllVisualTweens();
             ClearExistingGround();
             tileVisuals.Clear();
 
@@ -82,12 +96,57 @@ namespace projectsplippy
                 for (int y = 0; y < gridSize; y++)
                 {
                     Vector2Int cell = new Vector2Int(x, y);
+
+                    if (includedCells != null && !includedCells.Contains(cell))
+                    {
+                        continue;
+                    }
+
                     TileType type = boardSystem.GetTileType(cell);
-                    tileVisuals[cell] = CreateVisual(cell, type);
+                    GameObject overridePrefab = null;
+
+                    if (cellPrefabOverrides != null)
+                    {
+                        cellPrefabOverrides.TryGetValue(cell, out overridePrefab);
+                    }
+
+                    tileVisuals[cell] = CreateVisual(cell, type, overridePrefab);
                 }
             }
 
             RefreshProgressVisuals(boardSystem);
+        }
+
+        public IEnumerator PlayMaterializeRise(Vector2 startYOffsetRange, float totalDuration)
+        {
+            float duration = Mathf.Max(0.1f, totalDuration);
+            float maxDelay = duration * 0.2f;
+            float minYOffset = Mathf.Min(startYOffsetRange.x, startYOffsetRange.y);
+            float maxYOffset = Mathf.Max(startYOffsetRange.x, startYOffsetRange.y);
+            var visuals = new List<TileVisual>(tileVisuals.Values);
+
+            // Randomized reveal order while guaranteeing all tiles complete within totalDuration.
+            for (int i = 0; i < visuals.Count; i++)
+            {
+                TileVisual visual = visuals[i];
+
+                if (visual.transform == null)
+                {
+                    continue;
+                }
+
+                Vector3 target = visual.transform.position;
+                Vector3 targetScale = visual.baseScale;
+                float startYOffset = Random.Range(minYOffset, maxYOffset);
+                visual.transform.position = target + new Vector3(0f, startYOffset, 0f);
+                visual.transform.localScale = Vector3.zero;
+
+                float delay = Random.Range(0f, maxDelay);
+                float riseDuration = Mathf.Max(0.1f, duration - delay);
+                StartCoroutine(RiseTile(visual.transform, target, targetScale, delay, riseDuration, materializeRiseEase));
+            }
+
+            yield return new WaitForSeconds(duration);
         }
 
         public void RefreshProgressVisuals(TileBoardSystem boardSystem)
@@ -136,7 +195,8 @@ namespace projectsplippy
         {
             if (!tileVisuals.TryGetValue(cell, out TileVisual visual))
             {
-                return;
+                tileVisuals[cell] = CreateVisual(cell, TileType.Filler);
+                visual = tileVisuals[cell];
             }
 
             if (visual.rotateTween.isAlive)
@@ -189,16 +249,12 @@ namespace projectsplippy
             float halfDuration = Mathf.Max(0.01f, duration * 0.5f);
             Vector3 targetScale = visual.baseScale * scaleMultiplier;
 
-            visual.scaleTween = Tween.Scale(visual.transform, targetScale, halfDuration, cycles: 2, cycleMode: CycleMode.Yoyo)
-                .OnComplete(() =>
-                {
-                    visual.transform.localScale = visual.baseScale;
-                });
+            visual.scaleTween = Tween.Scale(visual.transform, targetScale, halfDuration, cycles: 2, cycleMode: CycleMode.Yoyo);
         }
 
-        private TileVisual CreateVisual(Vector2Int cell, TileType type)
+        private TileVisual CreateVisual(Vector2Int cell, TileType type, GameObject prefabOverride = null)
         {
-            GameObject tileObject = CreateTileObject(type);
+            GameObject tileObject = CreateTileObject(type, prefabOverride);
             tileObject.name = $"Tile_{cell.x}_{cell.y}_{type}";
             tileObject.transform.SetParent(groundParent, true);
             tileObject.transform.position = CellToWorld(cell) + new Vector3(0f, tileYOffset, 0f);
@@ -297,14 +353,30 @@ namespace projectsplippy
             float halfDuration = Mathf.Max(0.03f, hydrationLevelPulseDuration * 0.5f);
             Vector3 pulseScale = baseScale * hydrationLevelPulseScaleMultiplier;
 
-            visual.levelTween = Tween.Scale(levelTransform, pulseScale, halfDuration, cycles: 2, cycleMode: CycleMode.Yoyo)
-                .OnComplete(() =>
+            visual.levelTween = Tween.Scale(levelTransform, pulseScale, halfDuration, cycles: 2, cycleMode: CycleMode.Yoyo);
+        }
+
+        private void StopAllVisualTweens()
+        {
+            foreach (KeyValuePair<Vector2Int, TileVisual> kv in tileVisuals)
+            {
+                TileVisual visual = kv.Value;
+
+                if (visual.scaleTween.isAlive)
                 {
-                    if (levelTransform != null)
-                    {
-                        levelTransform.localScale = baseScale;
-                    }
-                });
+                    visual.scaleTween.Stop();
+                }
+
+                if (visual.rotateTween.isAlive)
+                {
+                    visual.rotateTween.Stop();
+                }
+
+                if (visual.levelTween.isAlive)
+                {
+                    visual.levelTween.Stop();
+                }
+            }
         }
 
         private void CacheHydrationLevelObjects(TileVisual visual)
@@ -488,8 +560,27 @@ namespace projectsplippy
             }
         }
 
-        private GameObject CreateTileObject(TileType type)
+        private static IEnumerator RiseTile(Transform tileTransform, Vector3 target, Vector3 targetScale, float delay, float duration, Ease ease)
         {
+            if (delay > 0f)
+            {
+                yield return new WaitForSeconds(delay);
+            }
+
+            if (tileTransform != null)
+            {
+                Tween.Position(tileTransform, target, duration, ease);
+                Tween.Scale(tileTransform, targetScale, duration, ease);
+            }
+        }
+
+        private GameObject CreateTileObject(TileType type, GameObject prefabOverride = null)
+        {
+            if (prefabOverride != null)
+            {
+                return Instantiate(prefabOverride);
+            }
+
             if (prefabByType.TryGetValue(type, out GameObject prefab) && prefab != null)
             {
                 return Instantiate(prefab);

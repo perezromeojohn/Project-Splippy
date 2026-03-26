@@ -107,6 +107,21 @@ namespace projectsplippy
             }
         }
 
+        public void ApplyLobbyMask(HashSet<Vector2Int> walkableCells)
+        {
+            var allowed = walkableCells ?? new HashSet<Vector2Int>();
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    Vector2Int cell = new Vector2Int(x, y);
+                    TileType type = allowed.Contains(cell) ? TileType.Filler : TileType.Rock;
+                    model.SetTileType(cell, type);
+                }
+            }
+        }
+
         public TileType GetTileType(Vector2Int cell)
         {
             return model.GetTileType(cell);

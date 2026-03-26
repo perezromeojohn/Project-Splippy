@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Collections;
 using PrimeTween;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -7,9 +8,18 @@ namespace projectsplippy
 {
     public class GameManager : MonoBehaviour
     {
+        public enum GamePhase
+        {
+            Lobby,
+            Revealing,
+            Countdown,
+            Gameplay
+        }
+
         [Header("References")]
         [SerializeField] private TileBoardView boardView;
         [SerializeField] private RunStateController runState;
+        [SerializeField] private PreGameFlowController preGameFlow;
 
         [Header("Grid")]
         [SerializeField] private int gridSize = 7;
@@ -60,6 +70,16 @@ namespace projectsplippy
         private bool isMoving;
         private Vector3 splippyBaseScale = Vector3.one;
         private int completedTurns;
+        private GamePhase currentPhase = GamePhase.Gameplay;
+
+        public int GridSize => gridSize;
+        public float CellSize => cellSize;
+        public Vector2Int CurrentCell => currentCell;
+        public Vector2Int CenterCell => new Vector2Int(gridSize / 2, gridSize / 2);
+        public Vector2Int BottomCenterCell => new Vector2Int(gridSize / 2, 0);
+        public Vector3 GridCenterWorld => GetGridCenterWorld();
+        public bool IsMoving => isMoving;
+        public GamePhase CurrentPhase => currentPhase;
 
         private void Awake()
         {
@@ -79,6 +99,11 @@ namespace projectsplippy
             if (runState == null)
             {
                 runState = GetComponent<RunStateController>();
+            }
+
+            if (preGameFlow == null)
+            {
+                preGameFlow = GetComponent<PreGameFlowController>();
             }
 
             if (boardView == null || runState == null)
@@ -101,14 +126,17 @@ namespace projectsplippy
             currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
 
             tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildBoardTurnRules(), BuildSpawnWeights());
-            tileBoardSystem.InitializeBoard(currentCell);
             completedTurns = 0;
-
-            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem);
-            runState.Initialize();
             SetupInput();
 
-            splippy.position = CellToWorldForSplippy(currentCell);
+            if (preGameFlow != null)
+            {
+                preGameFlow.Begin(this);
+            }
+            else
+            {
+                StartGameplayImmediate();
+            }
         }
 
         private void OnEnable()
@@ -128,7 +156,12 @@ namespace projectsplippy
                 return;
             }
 
-            if (runState != null && runState.IsGameOver)
+            if (currentPhase != GamePhase.Lobby && currentPhase != GamePhase.Gameplay)
+            {
+                return;
+            }
+
+            if (currentPhase == GamePhase.Gameplay && runState != null && runState.IsGameOver)
             {
                 return;
             }
@@ -156,6 +189,96 @@ namespace projectsplippy
             }
 
             MoveToCell(clickedCell);
+        }
+
+        public void ConfigureLobby(
+            HashSet<Vector2Int> walkableCells,
+            Dictionary<Vector2Int, GameObject> specialPrefabs,
+            Vector2Int playerStartCell)
+        {
+            currentPhase = GamePhase.Lobby;
+            currentCell = playerStartCell;
+
+            tileBoardSystem.ApplyLobbyMask(walkableCells);
+            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs);
+            boardView.RefreshProgressVisuals(tileBoardSystem);
+            splippy.position = CellToWorldForSplippy(currentCell);
+        }
+
+        public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
+        {
+            currentPhase = GamePhase.Revealing;
+            completedTurns = 0;
+
+            tileBoardSystem.InitializeBoard(currentCell);
+            Vector2Int center = CenterCell;
+            int maxDistance = Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - 0);
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - (gridSize - 1)));
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - (gridSize - 1)));
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - 0));
+
+            float delay = Mathf.Max(0.01f, ringStepDelay);
+
+            for (int dist = 0; dist <= maxDistance; dist++)
+            {
+                var ringCells = new List<Vector2Int>();
+
+                for (int x = 0; x < gridSize; x++)
+                {
+                    for (int y = 0; y < gridSize; y++)
+                    {
+                        Vector2Int cell = new Vector2Int(x, y);
+                        int manhattan = Mathf.Abs(cell.x - center.x) + Mathf.Abs(cell.y - center.y);
+
+                        if (manhattan == dist)
+                        {
+                            ringCells.Add(cell);
+                        }
+                    }
+                }
+
+                // Randomize within each ring so the bloom feels organic.
+                for (int i = ringCells.Count - 1; i > 0; i--)
+                {
+                    int j = Random.Range(0, i + 1);
+                    (ringCells[i], ringCells[j]) = (ringCells[j], ringCells[i]);
+                }
+
+                for (int i = 0; i < ringCells.Count; i++)
+                {
+                    Vector2Int cell = ringCells[i];
+                    TileType type = tileBoardSystem.GetTileType(cell);
+                    boardView.PlayTileReplacementFlip(cell, type);
+                }
+
+                if (dist < maxDistance)
+                {
+                    yield return new WaitForSeconds(delay);
+                }
+            }
+
+            boardView.RefreshProgressVisuals(tileBoardSystem);
+        }
+
+        public void BeginCountdownPhase()
+        {
+            currentPhase = GamePhase.Countdown;
+        }
+
+        public void BeginGameplayPhase()
+        {
+            currentPhase = GamePhase.Gameplay;
+            runState.Initialize();
+            boardView.RefreshProgressVisuals(tileBoardSystem);
+        }
+
+        private void StartGameplayImmediate()
+        {
+            tileBoardSystem.InitializeBoard(currentCell);
+            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem);
+            runState.Initialize();
+            splippy.position = CellToWorldForSplippy(currentCell);
+            currentPhase = GamePhase.Gameplay;
         }
 
         private void SetupInput()
@@ -250,7 +373,10 @@ namespace projectsplippy
         {
             if (index >= path.Count)
             {
-                ResolvePostMoveEvents();
+                if (currentPhase == GamePhase.Gameplay)
+                {
+                    ResolvePostMoveEvents();
+                }
                 isMoving = false;
                 return;
             }
@@ -281,6 +407,20 @@ namespace projectsplippy
                         {
                             currentCell = nextCell;
                             bool hopGameOver = runState != null && runState.ApplyHopCost(1, evaluateGameOver: false);
+
+                            if (currentPhase == GamePhase.Lobby)
+                            {
+                                boardView.PlayTileLandingFeedback(nextCell);
+
+                                if (index == finalIndex)
+                                {
+                                    preGameFlow?.HandleLobbyLanding(nextCell);
+                                }
+
+                                Tween.Scale(splippy, splippyBaseScale, landingSettleDuration, landingSettleEase);
+                                MoveAlongPath(path, index + 1, finalIndex);
+                                return;
+                            }
 
                             if (hopGameOver)
                             {
