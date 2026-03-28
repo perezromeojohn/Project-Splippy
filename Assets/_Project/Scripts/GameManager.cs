@@ -31,6 +31,13 @@ namespace projectsplippy
         [SerializeField] private string playerMapName = "Player";
         [SerializeField] private string moveTowardsActionName = "MoveTowards";
 
+        [Header("Path Authoring")]
+        [SerializeField, Min(1)] private int maxGameplayPathRange = 8;
+        [SerializeField] private bool autoResolveHoverPathAfterMove = true;
+        [SerializeField, Min(1)] private int firstStepWaterCost = 5;
+        [SerializeField, Min(1)] private int secondStepWaterCost = 3;
+        [SerializeField, Min(1)] private int sustainedStepWaterCost = 1;
+
         [Header("Tile Rules")]
         [SerializeField] private TileRules tileRules = default;
 
@@ -65,9 +72,12 @@ namespace projectsplippy
         private InputAction moveTowardsAction;
         private TileBoardSystem tileBoardSystem;
         private readonly List<Vector2Int> clearedSanitationSources = new List<Vector2Int>();
+        private readonly List<Vector2Int> authoredGameplayPath = new List<Vector2Int>();
 
         private Vector2Int currentCell;
         private bool isMoving;
+        private bool resolveHoverPathOnIdle;
+        private bool suppressGameplayClick;
         private Vector3 splippyBaseScale = Vector3.one;
         private int completedTurns;
         private GamePhase currentPhase = GamePhase.Gameplay;
@@ -124,6 +134,7 @@ namespace projectsplippy
             cellSize = Mathf.Max(0.1f, cellSize);
             tileRules = ResolveTileRules(tileRules);
             currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
+            ResetGameplayPath();
 
             tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildBoardTurnRules(), BuildSpawnWeights());
             completedTurns = 0;
@@ -154,8 +165,15 @@ namespace projectsplippy
         {
             boardView.UpdateBillboardInteractor(splippy.position);
 
+            bool movePressedThisFrame = moveTowardsAction != null && moveTowardsAction.WasPressedThisFrame();
+
             if (isMoving)
             {
+                if (movePressedThisFrame)
+                {
+                    suppressGameplayClick = true;
+                }
+
                 boardView.ClearHoverPathPreview();
                 return;
             }
@@ -172,48 +190,86 @@ namespace projectsplippy
                 return;
             }
 
-            UpdateHoverPathPreview();
+            bool hasHoveredCell = false;
+            Vector2Int hoveredCell = default;
 
-            if (moveTowardsAction == null || !moveTowardsAction.WasPressedThisFrame())
+            if (TryGetPointerScreenPosition(out Vector2 pointerScreenPosition))
+            {
+                hasHoveredCell = TryGetClickedCell(pointerScreenPosition, out hoveredCell);
+            }
+
+            if (currentPhase == GamePhase.Gameplay && hasHoveredCell)
+            {
+                UpdateGameplayAuthoredPath(hoveredCell);
+            }
+
+            UpdateHoverPathPreview(hasHoveredCell, hoveredCell);
+
+            if (currentPhase == GamePhase.Gameplay && resolveHoverPathOnIdle)
+            {
+                resolveHoverPathOnIdle = false;
+            }
+
+            if (moveTowardsAction == null || !movePressedThisFrame)
             {
                 return;
             }
 
-            if (!TryGetPointerScreenPosition(out Vector2 pointerScreenPosition))
+            if (!hasHoveredCell)
             {
                 return;
             }
 
-            if (!TryGetClickedCell(pointerScreenPosition, out Vector2Int clickedCell))
+            boardView.PlayTileTapFeedback(hoveredCell);
+
+            if (currentPhase == GamePhase.Gameplay)
+            {
+                if (suppressGameplayClick)
+                {
+                    suppressGameplayClick = false;
+                    return;
+                }
+
+                if (hoveredCell == currentCell)
+                {
+                    ResetGameplayPath();
+                    boardView.ClearHoverPathPreview();
+                    return;
+                }
+
+                TryExecuteAuthoredGameplayPath();
+                return;
+            }
+
+            if (hoveredCell == currentCell)
             {
                 return;
             }
 
-            boardView.PlayTileTapFeedback(clickedCell);
-
-            if (clickedCell == currentCell)
-            {
-                return;
-            }
-
-            MoveToCell(clickedCell);
+            MoveToCell(hoveredCell);
         }
 
-        private void UpdateHoverPathPreview()
+        private void UpdateHoverPathPreview(bool hasHoveredCell, Vector2Int hoveredCell)
         {
-            if (currentPhase != GamePhase.Gameplay)
+            if (currentPhase == GamePhase.Gameplay)
+            {
+                if (authoredGameplayPath.Count <= 1)
+                {
+                    boardView.ClearHoverPathPreview();
+                    return;
+                }
+
+                boardView.ShowHoverPathPreview(authoredGameplayPath);
+                return;
+            }
+
+            if (currentPhase != GamePhase.Lobby)
             {
                 boardView.ClearHoverPathPreview();
                 return;
             }
 
-            if (!TryGetPointerScreenPosition(out Vector2 pointerScreenPosition))
-            {
-                boardView.ClearHoverPathPreview();
-                return;
-            }
-
-            if (!TryGetClickedCell(pointerScreenPosition, out Vector2Int hoveredCell))
+            if (!hasHoveredCell)
             {
                 boardView.ClearHoverPathPreview();
                 return;
@@ -234,6 +290,130 @@ namespace projectsplippy
             boardView.ShowHoverPathPreview(previewPath);
         }
 
+        private void UpdateGameplayAuthoredPath(Vector2Int hoveredCell)
+        {
+            if (authoredGameplayPath.Count == 0 || authoredGameplayPath[0] != currentCell)
+            {
+                ResetGameplayPath();
+            }
+
+            if (hoveredCell == currentCell)
+            {
+                ResetGameplayPath();
+                return;
+            }
+
+            if (!IsCellWalkable(hoveredCell))
+            {
+                return;
+            }
+
+            if (authoredGameplayPath.Count > 1 && hoveredCell == authoredGameplayPath[authoredGameplayPath.Count - 2])
+            {
+                authoredGameplayPath.RemoveAt(authoredGameplayPath.Count - 1);
+                return;
+            }
+
+            Vector2Int tail = authoredGameplayPath[authoredGameplayPath.Count - 1];
+
+            int existingSteps = authoredGameplayPath.Count - 1;
+            int rangeRemaining = Mathf.Max(0, Mathf.Max(1, maxGameplayPathRange) - existingSteps);
+            int waterRemainingSteps = GetMaxAffordableAdditionalSteps(existingSteps);
+            int stepBudget = Mathf.Min(rangeRemaining, waterRemainingSteps);
+
+            if (stepBudget <= 0)
+            {
+                return;
+            }
+
+            if (!IsCardinalAdjacent(tail, hoveredCell))
+            {
+                if (!GridPathfinder.TryFindPathBfs(gridSize, tail, hoveredCell, IsCellWalkable, out List<Vector2Int> autoPath) || autoPath.Count <= 1)
+                {
+                    return;
+                }
+
+                int appendCount = Mathf.Min(stepBudget, autoPath.Count - 1);
+
+                for (int i = 1; i <= appendCount; i++)
+                {
+                    Vector2Int next = autoPath[i];
+                    int nextExistingIndex = authoredGameplayPath.IndexOf(next);
+
+                    if (nextExistingIndex >= 0)
+                    {
+                        int removeCount = authoredGameplayPath.Count - (nextExistingIndex + 1);
+
+                        if (removeCount > 0)
+                        {
+                            authoredGameplayPath.RemoveRange(nextExistingIndex + 1, removeCount);
+                        }
+
+                        continue;
+                    }
+
+                    authoredGameplayPath.Add(next);
+                }
+
+                return;
+            }
+
+            int existingIndex = authoredGameplayPath.IndexOf(hoveredCell);
+
+            if (existingIndex >= 0)
+            {
+                int removeCount = authoredGameplayPath.Count - (existingIndex + 1);
+
+                if (removeCount > 0)
+                {
+                    authoredGameplayPath.RemoveRange(existingIndex + 1, removeCount);
+                }
+
+                return;
+            }
+
+            authoredGameplayPath.Add(hoveredCell);
+        }
+
+        private bool TryExecuteAuthoredGameplayPath()
+        {
+            if (currentPhase != GamePhase.Gameplay || isMoving)
+            {
+                return false;
+            }
+
+            if (runState != null && runState.IsGameOver)
+            {
+                return false;
+            }
+
+            if (authoredGameplayPath.Count <= 1)
+            {
+                return false;
+            }
+
+            var path = new List<Vector2Int>(authoredGameplayPath);
+            boardView.ClearHoverPathPreview();
+            clearedSanitationSources.Clear();
+            isMoving = true;
+            resolveHoverPathOnIdle = false;
+            MoveAlongPath(path, 1, path.Count - 1);
+            return true;
+        }
+
+        private void ResetGameplayPath()
+        {
+            authoredGameplayPath.Clear();
+            authoredGameplayPath.Add(currentCell);
+        }
+
+        private static bool IsCardinalAdjacent(Vector2Int a, Vector2Int b)
+        {
+            int dx = Mathf.Abs(a.x - b.x);
+            int dy = Mathf.Abs(a.y - b.y);
+            return (dx + dy) == 1;
+        }
+
         public void ConfigureLobby(
             HashSet<Vector2Int> walkableCells,
             Dictionary<Vector2Int, GameObject> specialPrefabs,
@@ -241,6 +421,9 @@ namespace projectsplippy
         {
             currentPhase = GamePhase.Lobby;
             currentCell = playerStartCell;
+            ResetGameplayPath();
+            resolveHoverPathOnIdle = false;
+            suppressGameplayClick = false;
 
             tileBoardSystem.ApplyLobbyMask(walkableCells);
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs);
@@ -314,6 +497,9 @@ namespace projectsplippy
             currentPhase = GamePhase.Gameplay;
             runState.Initialize();
             boardView.RefreshProgressVisuals(tileBoardSystem);
+            ResetGameplayPath();
+            resolveHoverPathOnIdle = false;
+            suppressGameplayClick = false;
         }
 
         private void StartGameplayImmediate()
@@ -324,6 +510,9 @@ namespace projectsplippy
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);
             currentPhase = GamePhase.Gameplay;
+            ResetGameplayPath();
+            resolveHoverPathOnIdle = false;
+            suppressGameplayClick = false;
         }
 
         private void SetupInput()
@@ -423,7 +612,11 @@ namespace projectsplippy
                 if (currentPhase == GamePhase.Gameplay)
                 {
                     ResolvePostMoveEvents();
+                    ResetGameplayPath();
+                    resolveHoverPathOnIdle = autoResolveHoverPathAfterMove;
                 }
+
+                suppressGameplayClick = false;
                 isMoving = false;
                 return;
             }
@@ -453,7 +646,7 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
-                            bool hopGameOver = runState != null && runState.ApplyHopCost(1, evaluateGameOver: false);
+                            bool hopGameOver = currentPhase == GamePhase.Gameplay && runState != null && runState.ApplyHopCost(GetStepWaterCost(index), evaluateGameOver: false);
 
                             if (currentPhase == GamePhase.Lobby)
                             {
@@ -573,6 +766,49 @@ namespace projectsplippy
                     boardView.RefreshProgressVisuals(tileBoardSystem);
                 }
             }
+        }
+
+        private int GetStepWaterCost(int stepIndexInPath)
+        {
+            if (stepIndexInPath <= 1)
+            {
+                return Mathf.Max(1, firstStepWaterCost);
+            }
+
+            if (stepIndexInPath == 2)
+            {
+                return Mathf.Max(1, secondStepWaterCost);
+            }
+
+            return Mathf.Max(1, sustainedStepWaterCost);
+        }
+
+        private int GetMaxAffordableAdditionalSteps(int existingSteps)
+        {
+            if (runState == null)
+            {
+                return Mathf.Max(1, maxGameplayPathRange);
+            }
+
+            int water = Mathf.Max(0, runState.CurrentWaterReserve);
+            int additional = 0;
+            int safetyCap = Mathf.Max(1, maxGameplayPathRange);
+
+            while (additional < safetyCap)
+            {
+                int stepIndex = existingSteps + additional + 1;
+                int cost = GetStepWaterCost(stepIndex);
+
+                if (water < cost)
+                {
+                    break;
+                }
+
+                water -= cost;
+                additional++;
+            }
+
+            return additional;
         }
 
         private bool IsCellWalkable(Vector2Int cell)

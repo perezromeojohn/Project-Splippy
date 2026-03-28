@@ -25,6 +25,7 @@ namespace projectsplippy
             public Vector3[] farmlandOffsets;
             public int[] farmlandCropIndices;
             public int billboardHydrationLevel = -1;
+            public bool isSwapping;
             public int shownHydrationLevel;
             public Vector3 baseScale;
             public Vector3 baseRotation;
@@ -74,7 +75,7 @@ namespace projectsplippy
         [SerializeField, Range(0f, 0.49f)] private float farmlandBillboardMarginPercent = 0.02f;
         [SerializeField] private float farmlandBillboardBaseYOffset = 0.008f;
         [SerializeField] private Vector2 farmlandBillboardSize = new Vector2(0.35f, 0.5f);
-        [SerializeField, Range(0f, 0.49f)] private float farmlandBillboardSeparationRadiusPercent = 0.2f;
+        [SerializeField, Range(0f, 1f)] private float farmlandBillboardSeparationRadiusPercent = 0.2f;
         [SerializeField] private int farmlandBillboardPlacementAttempts = 24;
         [SerializeField, Range(-0.49f, 0.49f)] private float farmlandBillboardDepthBiasPercent = -0.15f;
         [SerializeField] private float farmlandBillboardTilt = 8f;
@@ -316,13 +317,9 @@ namespace projectsplippy
                         continue;
                     }
 
-                    Vector3 lookDir = cachedCamera.transform.position - billboard.position;
-
-                    if (lookDir.sqrMagnitude > 0.0001f)
-                    {
-                        billboard.rotation = Quaternion.LookRotation(lookDir.normalized, Vector3.up);
-                        billboard.Rotate(farmlandBillboardTilt, 0f, 0f, Space.Self);
-                    }
+                    Vector3 cameraFacingDir = -cachedCamera.transform.forward;
+                    billboard.rotation = Quaternion.LookRotation(cameraFacingDir.normalized, Vector3.up);
+                    billboard.Rotate(farmlandBillboardTilt, 0f, 0f, Space.Self);
 
                     if (i < visual.farmlandBillboardRenderers.Count && visual.farmlandBillboardRenderers[i] != null)
                     {
@@ -366,6 +363,9 @@ namespace projectsplippy
                 visual.rotateTween.Stop();
             }
 
+            visual.isSwapping = true;
+            PlayFarmlandBillboardShrink(visual, Mathf.Max(0.05f, tileReplaceFlipDuration * 0.35f));
+
             float halfDuration = Mathf.Max(0.05f, tileReplaceFlipDuration * 0.5f);
             Vector3 foldIn = visual.baseRotation + new Vector3(90f, 0f, 0f);
             Vector3 foldOutStart = visual.baseRotation + new Vector3(-90f, 0f, 0f);
@@ -380,11 +380,14 @@ namespace projectsplippy
                         return;
                     }
 
+                    replaced.isSwapping = true;
+
                     replaced.transform.localEulerAngles = foldOutStart;
                     replaced.rotateTween = Tween.LocalEulerAngles(replaced.transform, foldOutStart, replaced.baseRotation, halfDuration, tileReplaceFlipOutEase)
                         .OnComplete(() =>
                         {
                             replaced.transform.localEulerAngles = replaced.baseRotation;
+                            replaced.isSwapping = false;
                             InitializeReplacementBillboardVisuals(replaced, newType);
 
                             if (pulseAfterReplace)
@@ -507,6 +510,12 @@ namespace projectsplippy
                 return;
             }
 
+            if (visual.isSwapping)
+            {
+                SetFarmlandBillboardsActive(visual, false);
+                return;
+            }
+
             bool isFarmland = useFarmlandBillboards && tile != null && tile.Type == TileType.Farmland;
 
             if (!isFarmland)
@@ -519,7 +528,7 @@ namespace projectsplippy
             EnsureFarmlandBillboards(visual);
             bool activated = SetFarmlandBillboardsActive(visual, true);
 
-            if (activated)
+            if (activated && !visual.isSwapping)
             {
                 PlayFarmlandBillboardPop(visual);
             }
@@ -662,9 +671,10 @@ namespace projectsplippy
                 if (delay > 0f)
                 {
                     Transform capturedBillboard = billboard;
+                    TileVisual capturedVisual = visual;
                     Tween.Delay(delay, () =>
                     {
-                        if (capturedBillboard != null && capturedBillboard.gameObject.activeSelf)
+                        if (capturedBillboard != null && capturedBillboard.gameObject.activeSelf && capturedVisual != null && !capturedVisual.isSwapping)
                         {
                             Tween.Scale(capturedBillboard, targetScale, duration, farmlandBillboardPopEase);
                         }
@@ -672,8 +682,33 @@ namespace projectsplippy
                 }
                 else
                 {
-                    Tween.Scale(billboard, targetScale, duration, farmlandBillboardPopEase);
+                    if (!visual.isSwapping)
+                    {
+                        Tween.Scale(billboard, targetScale, duration, farmlandBillboardPopEase);
+                    }
                 }
+            }
+        }
+
+        private void PlayFarmlandBillboardShrink(TileVisual visual, float duration)
+        {
+            if (visual == null)
+            {
+                return;
+            }
+
+            float clampedDuration = Mathf.Max(0.03f, duration);
+
+            for (int i = 0; i < visual.farmlandBillboards.Count; i++)
+            {
+                Transform billboard = visual.farmlandBillboards[i];
+
+                if (billboard == null || !billboard.gameObject.activeSelf)
+                {
+                    continue;
+                }
+
+                Tween.Scale(billboard, Vector3.zero, clampedDuration, Ease.InBack);
             }
         }
 
@@ -707,14 +742,17 @@ namespace projectsplippy
                 renderer.color = farmlandBillboardTint;
             }
 
-            PlayFarmlandBillboardPop(visual);
+            if (!visual.isSwapping)
+            {
+                PlayFarmlandBillboardPop(visual);
+            }
         }
 
         private Vector2 FindPlanarOffset(int index, Vector3[] existingOffsets, float half, float separationRadius, float depthBiasPercent)
         {
             int attempts = Mathf.Max(1, farmlandBillboardPlacementAttempts);
             float depthBias = Mathf.Clamp(depthBiasPercent, -0.49f, 0.49f) * (half * 2f);
-            float sizeDrivenSeparation = Mathf.Max(0f, farmlandBillboardSize.x * 0.8f);
+            float sizeDrivenSeparation = Mathf.Max(0f, farmlandBillboardSize.x * 0.95f);
             float effectiveSeparation = Mathf.Max(separationRadius, sizeDrivenSeparation);
 
             if (effectiveSeparation <= 0.0001f || index <= 0 || existingOffsets == null)
