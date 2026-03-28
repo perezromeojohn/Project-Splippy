@@ -152,6 +152,8 @@ namespace projectsplippy
 
         private void Update()
         {
+            boardView.UpdateBillboardInteractor(splippy.position);
+
             if (isMoving)
             {
                 boardView.ClearHoverPathPreview();
@@ -244,6 +246,7 @@ namespace projectsplippy
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs);
             boardView.RefreshProgressVisuals(tileBoardSystem);
             splippy.position = CellToWorldForSplippy(currentCell);
+            boardView.UpdateBillboardInteractor(splippy.position);
         }
 
         public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
@@ -319,6 +322,7 @@ namespace projectsplippy
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem);
             runState.Initialize();
             splippy.position = CellToWorldForSplippy(currentCell);
+            boardView.UpdateBillboardInteractor(splippy.position);
             currentPhase = GamePhase.Gameplay;
         }
 
