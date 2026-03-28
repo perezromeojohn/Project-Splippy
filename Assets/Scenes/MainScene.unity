@@ -772,7 +772,6 @@ MonoBehaviour:
   playerMapName: Player
   moveTowardsActionName: MoveTowards
   maxGameplayPathRange: 8
-  autoResolveHoverPathAfterMove: 1
   firstStepWaterCost: 5
   secondStepWaterCost: 3
   sustainedStepWaterCost: 1
@@ -1051,14 +1050,14 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
   - {fileID: 21300000, guid: 04e3e472c243f3d4fbb9090d6ee59ed0, type: 3}
   - {fileID: 21300000, guid: dd4804264223caa4ebeef900e8f08325, type: 3}
-  farmlandBillboardCount: 2
+  farmlandBillboardCount: 3
   farmlandBillboardMarginPercent: 0
-  farmlandBillboardBaseYOffset: 0
+  farmlandBillboardBaseYOffset: 0.5
   farmlandBillboardSize: {x: 0.4, y: 0.4}
-  farmlandBillboardSeparationRadiusPercent: 1
+  farmlandBillboardSeparationRadiusPercent: 0.25
   farmlandBillboardPlacementAttempts: 40
-  farmlandBillboardDepthBiasPercent: -0.49
-  farmlandBillboardTilt: 8
+  farmlandBillboardDepthBiasPercent: -0.12
+  farmlandBillboardTilt: 0
   farmlandBillboardRandomYaw: 12
   farmlandBillboardTint: {r: 1, g: 1, b: 1, a: 1}
   billboardInteractorRadius: 0.5
@@ -1071,11 +1070,17 @@ MonoBehaviour:
   farmlandBillboardPopEase: 27
   showHoverPathPreview: 1
   hoverPreviewMaterial: {fileID: 2100000, guid: 66477ee559f24b1429e7f3332a28468f, type: 2}
-  hoverPreviewColor: {r: 0.2, g: 0.95, b: 1, a: 0.72}
-  hoverPreviewDestinationColor: {r: 1, g: 0.95, b: 0.35, a: 0.85}
+  hoverPreviewColor: {r: 0.34901962, g: 0.85882354, b: 1, a: 0.72156864}
+  hoverPreviewDestinationColor: {r: 0.34901965, g: 0.85878444, b: 1, a: 0.72156864}
   hoverPreviewYOffset: 0.03
-  hoverPreviewSize: 0.8
   hoverPreviewDestinationSize: 1.02
+  hoverPreviewPreviousNodeScale: 0.7
+  hoverPreviewLinkWidth: 1
+  hoverPreviewStrokeWidth: 0.2
+  hoverPreviewJitterAmount: 0.4
+  hoverPreviewJitterFrequency: 7
+  hoverPreviewJitterSpeed: 3
+  hoverPreviewFillAlpha: 0.08
 --- !u!1 &990908595
 GameObject:
   m_ObjectHideFlags: 0

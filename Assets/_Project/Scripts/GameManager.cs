@@ -33,7 +33,6 @@ namespace projectsplippy
 
         [Header("Path Authoring")]
         [SerializeField, Min(1)] private int maxGameplayPathRange = 8;
-        [SerializeField] private bool autoResolveHoverPathAfterMove = true;
         [SerializeField, Min(1)] private int firstStepWaterCost = 5;
         [SerializeField, Min(1)] private int secondStepWaterCost = 3;
         [SerializeField, Min(1)] private int sustainedStepWaterCost = 1;
@@ -76,7 +75,6 @@ namespace projectsplippy
 
         private Vector2Int currentCell;
         private bool isMoving;
-        private bool resolveHoverPathOnIdle;
         private bool suppressGameplayClick;
         private Vector3 splippyBaseScale = Vector3.one;
         private int completedTurns;
@@ -173,20 +171,16 @@ namespace projectsplippy
                 {
                     suppressGameplayClick = true;
                 }
-
-                boardView.ClearHoverPathPreview();
                 return;
             }
 
             if (currentPhase != GamePhase.Lobby && currentPhase != GamePhase.Gameplay)
             {
-                boardView.ClearHoverPathPreview();
                 return;
             }
 
             if (currentPhase == GamePhase.Gameplay && runState != null && runState.IsGameOver)
             {
-                boardView.ClearHoverPathPreview();
                 return;
             }
 
@@ -204,11 +198,6 @@ namespace projectsplippy
             }
 
             UpdateHoverPathPreview(hasHoveredCell, hoveredCell);
-
-            if (currentPhase == GamePhase.Gameplay && resolveHoverPathOnIdle)
-            {
-                resolveHoverPathOnIdle = false;
-            }
 
             if (moveTowardsAction == null || !movePressedThisFrame)
             {
@@ -233,7 +222,6 @@ namespace projectsplippy
                 if (hoveredCell == currentCell)
                 {
                     ResetGameplayPath();
-                    boardView.ClearHoverPathPreview();
                     return;
                 }
 
@@ -247,47 +235,6 @@ namespace projectsplippy
             }
 
             MoveToCell(hoveredCell);
-        }
-
-        private void UpdateHoverPathPreview(bool hasHoveredCell, Vector2Int hoveredCell)
-        {
-            if (currentPhase == GamePhase.Gameplay)
-            {
-                if (authoredGameplayPath.Count <= 1)
-                {
-                    boardView.ClearHoverPathPreview();
-                    return;
-                }
-
-                boardView.ShowHoverPathPreview(authoredGameplayPath);
-                return;
-            }
-
-            if (currentPhase != GamePhase.Lobby)
-            {
-                boardView.ClearHoverPathPreview();
-                return;
-            }
-
-            if (!hasHoveredCell)
-            {
-                boardView.ClearHoverPathPreview();
-                return;
-            }
-
-            if (hoveredCell == currentCell)
-            {
-                boardView.ClearHoverPathPreview();
-                return;
-            }
-
-            if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, hoveredCell, IsCellWalkable, out List<Vector2Int> previewPath) || previewPath.Count <= 1)
-            {
-                boardView.ClearHoverPathPreview();
-                return;
-            }
-
-            boardView.ShowHoverPathPreview(previewPath);
         }
 
         private void UpdateGameplayAuthoredPath(Vector2Int hoveredCell)
@@ -375,6 +322,47 @@ namespace projectsplippy
             authoredGameplayPath.Add(hoveredCell);
         }
 
+        private void UpdateHoverPathPreview(bool hasHoveredCell, Vector2Int hoveredCell)
+        {
+            if (currentPhase == GamePhase.Gameplay)
+            {
+                if (authoredGameplayPath.Count <= 1)
+                {
+                    boardView.ClearHoverPathPreview();
+                    return;
+                }
+
+                boardView.ShowHoverPathPreview(authoredGameplayPath);
+                return;
+            }
+
+            if (currentPhase != GamePhase.Lobby)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (!hasHoveredCell)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (hoveredCell == currentCell)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, hoveredCell, IsCellWalkable, out List<Vector2Int> previewPath) || previewPath.Count <= 1)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            boardView.ShowHoverPathPreview(previewPath);
+        }
+
         private bool TryExecuteAuthoredGameplayPath()
         {
             if (currentPhase != GamePhase.Gameplay || isMoving)
@@ -393,10 +381,11 @@ namespace projectsplippy
             }
 
             var path = new List<Vector2Int>(authoredGameplayPath);
-            boardView.ClearHoverPathPreview();
             clearedSanitationSources.Clear();
             isMoving = true;
-            resolveHoverPathOnIdle = false;
+
+            // Keep preview visible and consume it step-by-step while moving.
+            boardView.ShowHoverPathPreviewImmediate(path);
             MoveAlongPath(path, 1, path.Count - 1);
             return true;
         }
@@ -422,7 +411,6 @@ namespace projectsplippy
             currentPhase = GamePhase.Lobby;
             currentCell = playerStartCell;
             ResetGameplayPath();
-            resolveHoverPathOnIdle = false;
             suppressGameplayClick = false;
 
             tileBoardSystem.ApplyLobbyMask(walkableCells);
@@ -498,7 +486,6 @@ namespace projectsplippy
             runState.Initialize();
             boardView.RefreshProgressVisuals(tileBoardSystem);
             ResetGameplayPath();
-            resolveHoverPathOnIdle = false;
             suppressGameplayClick = false;
         }
 
@@ -511,7 +498,6 @@ namespace projectsplippy
             boardView.UpdateBillboardInteractor(splippy.position);
             currentPhase = GamePhase.Gameplay;
             ResetGameplayPath();
-            resolveHoverPathOnIdle = false;
             suppressGameplayClick = false;
         }
 
@@ -588,8 +574,6 @@ namespace projectsplippy
 
         private void MoveToCell(Vector2Int targetCell)
         {
-            boardView.ClearHoverPathPreview();
-
             if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, targetCell, IsCellWalkable, out List<Vector2Int> path))
             {
                 return;
@@ -602,6 +586,7 @@ namespace projectsplippy
 
             clearedSanitationSources.Clear();
             isMoving = true;
+            boardView.ShowHoverPathPreviewImmediate(path);
             MoveAlongPath(path, 1, path.Count - 1);
         }
 
@@ -613,7 +598,7 @@ namespace projectsplippy
                 {
                     ResolvePostMoveEvents();
                     ResetGameplayPath();
-                    resolveHoverPathOnIdle = autoResolveHoverPathAfterMove;
+                    boardView.ClearHoverPathPreview();
                 }
 
                 suppressGameplayClick = false;
@@ -646,6 +631,7 @@ namespace projectsplippy
                         .OnComplete(() =>
                         {
                             currentCell = nextCell;
+                            UpdateRemainingMovementPreview(path, index);
                             bool hopGameOver = currentPhase == GamePhase.Gameplay && runState != null && runState.ApplyHopCost(GetStepWaterCost(index), evaluateGameOver: false);
 
                             if (currentPhase == GamePhase.Lobby)
@@ -766,6 +752,25 @@ namespace projectsplippy
                     boardView.RefreshProgressVisuals(tileBoardSystem);
                 }
             }
+        }
+
+        private void UpdateRemainingMovementPreview(List<Vector2Int> fullPath, int landedIndex)
+        {
+            if (fullPath == null)
+            {
+                return;
+            }
+
+            int remainingCount = fullPath.Count - landedIndex;
+
+            if (remainingCount <= 1)
+            {
+                boardView.ClearHoverPathPreview();
+                return;
+            }
+
+            var remainingPath = fullPath.GetRange(landedIndex, remainingCount);
+            boardView.ConsumeHoverPreviewStep(remainingPath);
         }
 
         private int GetStepWaterCost(int stepIndexInPath)

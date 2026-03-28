@@ -78,7 +78,7 @@ namespace projectsplippy
         [SerializeField, Range(0f, 1f)] private float farmlandBillboardSeparationRadiusPercent = 0.2f;
         [SerializeField] private int farmlandBillboardPlacementAttempts = 24;
         [SerializeField, Range(-0.49f, 0.49f)] private float farmlandBillboardDepthBiasPercent = -0.15f;
-        [SerializeField] private float farmlandBillboardTilt = 8f;
+        [SerializeField] private float farmlandBillboardTilt = 0f;
         [SerializeField] private float farmlandBillboardRandomYaw = 12f;
         [SerializeField] private Color farmlandBillboardTint = Color.white;
         [SerializeField] private float billboardInteractorRadius = 1.6f;
@@ -93,23 +93,43 @@ namespace projectsplippy
         [Header("Hover Preview")]
         [SerializeField] private bool showHoverPathPreview = true;
         [SerializeField] private Material hoverPreviewMaterial;
-        [SerializeField] private Color hoverPreviewColor = new Color(0.2f, 0.95f, 1f, 0.72f);
-        [SerializeField] private Color hoverPreviewDestinationColor = new Color(1f, 0.95f, 0.35f, 0.85f);
+        [SerializeField] private Color hoverPreviewColor = new Color(0.2f, 0.95f, 1f, 0.92f);
+        [SerializeField] private Color hoverPreviewDestinationColor = new Color(1f, 0.95f, 0.35f, 0.95f);
         [SerializeField] private float hoverPreviewYOffset = 0.03f;
-        [SerializeField] private float hoverPreviewSize = 0.8f;
-        [SerializeField] private float hoverPreviewDestinationSize = 1.02f;
+        [SerializeField] private float hoverPreviewDestinationSize = 0.95f;
+        [SerializeField, Range(0.1f, 1f)] private float hoverPreviewPreviousNodeScale = 0.5f;
+        [SerializeField] private float hoverPreviewLinkWidth = 0.42f;
+        [SerializeField] private float hoverPreviewStrokeWidth = 0.36f;
+        [SerializeField] private float hoverPreviewJitterAmount = 0.015f;
+        [SerializeField] private float hoverPreviewJitterFrequency = 7f;
+        [SerializeField] private float hoverPreviewJitterSpeed = 3f;
+        [SerializeField] private float hoverPreviewFillAlpha = 0.14f;
+        [SerializeField] private float hoverPreviewFollowSpeed = 18f;
+        [SerializeField] private float hoverPreviewScaleSpeed = 20f;
+        [SerializeField, Range(0f, 1f)] private float hoverPreviewSpawnScale = 0.15f;
+        [SerializeField] private float hoverPreviewConsumeDuration = 0.08f;
 
         public float GroundTopYOffset => tileYOffset + groundTopYOffset;
 
         private readonly Dictionary<TileType, GameObject> prefabByType = new Dictionary<TileType, GameObject>();
         private readonly Dictionary<Vector2Int, TileVisual> tileVisuals = new Dictionary<Vector2Int, TileVisual>();
         private readonly List<GameObject> hoverPreviewMarkers = new List<GameObject>();
+        private readonly List<GameObject> hoverPreviewLinks = new List<GameObject>();
         private MaterialPropertyBlock hoverMarkerPropertyBlock;
         private MaterialPropertyBlock billboardPropertyBlock;
+        private bool hoverPreviewSnapNextUpdate;
+        private int hoverPreviewConsumeVersion;
         private Camera cachedCamera;
         private Vector3 currentInteractorPosition;
 
-        private static readonly int BaseColorProperty = Shader.PropertyToID("_BaseColor");
+        private static readonly int InkColorProperty = Shader.PropertyToID("_InkColor");
+        private static readonly int ModeProperty = Shader.PropertyToID("_Mode");
+        private static readonly int StrokeWidthProperty = Shader.PropertyToID("_StrokeWidth");
+        private static readonly int JitterAmpProperty = Shader.PropertyToID("_JitterAmp");
+        private static readonly int JitterFreqProperty = Shader.PropertyToID("_JitterFreq");
+        private static readonly int JitterSpeedProperty = Shader.PropertyToID("_JitterSpeed");
+        private static readonly int SeedProperty = Shader.PropertyToID("_Seed");
+        private static readonly int FillAlphaProperty = Shader.PropertyToID("_FillAlpha");
         private static readonly int BaseMapProperty = Shader.PropertyToID("_BaseMap");
         private static readonly int InteractorProperty = Shader.PropertyToID("_SplippyInteractor");
 
@@ -138,7 +158,6 @@ namespace projectsplippy
             CachePrefabs();
             EnsureGroundParent();
             StopAllVisualTweens();
-            ClearHoverPathPreview();
             ClearExistingGround();
             tileVisuals.Clear();
 
@@ -176,20 +195,37 @@ namespace projectsplippy
                 return;
             }
 
-            EnsureHoverMarkerCount(path.Count - 1);
+            int nodeCount = path.Count;
+            int linkCount = Mathf.Max(0, nodeCount - 1);
+            EnsureHoverMarkerCount(nodeCount);
+            EnsureHoverLinkMarkerCount(linkCount);
+            var nodePositions = new Vector3[nodeCount];
+            bool snapThisUpdate = hoverPreviewSnapNextUpdate;
+            hoverPreviewSnapNextUpdate = false;
+            float posT = snapThisUpdate ? 1f : (1f - Mathf.Exp(-Mathf.Max(0.01f, hoverPreviewFollowSpeed) * Time.deltaTime));
+            float scaleT = snapThisUpdate ? 1f : (1f - Mathf.Exp(-Mathf.Max(0.01f, hoverPreviewScaleSpeed) * Time.deltaTime));
 
-            for (int i = 1; i < path.Count; i++)
+            for (int i = 0; i < path.Count; i++)
             {
-                GameObject marker = hoverPreviewMarkers[i - 1];
+                GameObject marker = hoverPreviewMarkers[i];
                 Vector2Int cell = path[i];
                 bool isDestination = i == path.Count - 1;
-                float sizeFactor = isDestination ? hoverPreviewDestinationSize : hoverPreviewSize;
+                float sizeFactor = isDestination ? hoverPreviewDestinationSize : (hoverPreviewDestinationSize * hoverPreviewPreviousNodeScale);
                 float markerY = GetCellTopY(cell) + hoverPreviewYOffset;
+                Vector3 markerPosition = new Vector3(CellToWorld(cell).x, markerY, CellToWorld(cell).z);
+                Vector3 targetScale = Vector3.one * (cellSize * sizeFactor);
 
-                marker.SetActive(true);
-                marker.transform.position = new Vector3(CellToWorld(cell).x, markerY, CellToWorld(cell).z);
+                if (!marker.activeSelf)
+                {
+                    marker.SetActive(true);
+                    marker.transform.position = markerPosition;
+                    marker.transform.localScale = targetScale * hoverPreviewSpawnScale;
+                }
+
+                marker.transform.position = Vector3.Lerp(marker.transform.position, markerPosition, posT);
                 marker.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-                marker.transform.localScale = Vector3.one * (cellSize * sizeFactor);
+                marker.transform.localScale = Vector3.Lerp(marker.transform.localScale, targetScale, scaleT);
+                nodePositions[i] = marker.transform.position;
 
                 Renderer renderer = marker.GetComponent<Renderer>();
 
@@ -198,24 +234,140 @@ namespace projectsplippy
                     Color tint = isDestination ? hoverPreviewDestinationColor : hoverPreviewColor;
                     MaterialPropertyBlock block = GetHoverMarkerPropertyBlock();
                     renderer.GetPropertyBlock(block);
-                    block.SetColor(BaseColorProperty, tint);
+                    block.SetColor(InkColorProperty, tint);
+                    block.SetFloat(ModeProperty, 0f);
+                    block.SetFloat(StrokeWidthProperty, hoverPreviewStrokeWidth);
+                    block.SetFloat(JitterAmpProperty, hoverPreviewJitterAmount);
+                    block.SetFloat(JitterFreqProperty, hoverPreviewJitterFrequency);
+                    block.SetFloat(JitterSpeedProperty, hoverPreviewJitterSpeed);
+                    block.SetFloat(FillAlphaProperty, hoverPreviewFillAlpha);
+                    block.SetFloat(SeedProperty, (i + 1) * 17.31f);
                     renderer.SetPropertyBlock(block);
                 }
             }
 
-            for (int i = path.Count - 1; i < hoverPreviewMarkers.Count; i++)
+            for (int i = nodeCount; i < hoverPreviewMarkers.Count; i++)
             {
                 hoverPreviewMarkers[i].SetActive(false);
             }
+
+            for (int i = 0; i < linkCount; i++)
+            {
+                GameObject link = hoverPreviewLinks[i];
+                Vector3 a = nodePositions[i];
+                Vector3 b = nodePositions[i + 1];
+                Vector3 delta = b - a;
+                float length = new Vector2(delta.x, delta.z).magnitude;
+
+                if (length <= 0.0001f)
+                {
+                    link.SetActive(false);
+                    continue;
+                }
+
+                float yaw = Mathf.Atan2(delta.x, delta.z) * Mathf.Rad2Deg;
+                Vector3 linkTargetPos = (a + b) * 0.5f;
+                Vector3 linkTargetScale = new Vector3(cellSize * hoverPreviewLinkWidth, length, 1f);
+
+                if (!link.activeSelf)
+                {
+                    link.SetActive(true);
+                    link.transform.position = linkTargetPos;
+                    link.transform.localScale = linkTargetScale * hoverPreviewSpawnScale;
+                }
+
+                link.transform.position = Vector3.Lerp(link.transform.position, linkTargetPos, posT);
+                link.transform.rotation = Quaternion.Euler(90f, yaw, 0f);
+                link.transform.localScale = Vector3.Lerp(link.transform.localScale, linkTargetScale, scaleT);
+
+                Renderer renderer = link.GetComponent<Renderer>();
+
+                if (renderer != null)
+                {
+                    MaterialPropertyBlock block = GetHoverMarkerPropertyBlock();
+                    renderer.GetPropertyBlock(block);
+                    block.SetColor(InkColorProperty, hoverPreviewColor);
+                    block.SetFloat(ModeProperty, 1f);
+                    block.SetFloat(StrokeWidthProperty, hoverPreviewStrokeWidth);
+                    block.SetFloat(JitterAmpProperty, hoverPreviewJitterAmount);
+                    block.SetFloat(JitterFreqProperty, hoverPreviewJitterFrequency);
+                    block.SetFloat(JitterSpeedProperty, hoverPreviewJitterSpeed);
+                    block.SetFloat(FillAlphaProperty, hoverPreviewFillAlpha);
+                    block.SetFloat(SeedProperty, (i + 1) * 31.73f);
+                    renderer.SetPropertyBlock(block);
+                }
+            }
+
+            for (int i = linkCount; i < hoverPreviewLinks.Count; i++)
+            {
+                hoverPreviewLinks[i].SetActive(false);
+            }
+        }
+
+        public void ShowHoverPathPreviewImmediate(IReadOnlyList<Vector2Int> path)
+        {
+            hoverPreviewSnapNextUpdate = true;
+            ShowHoverPathPreview(path);
+        }
+
+        public void ConsumeHoverPreviewStep(IReadOnlyList<Vector2Int> remainingPath)
+        {
+            if (!showHoverPathPreview || remainingPath == null || remainingPath.Count <= 1)
+            {
+                ClearHoverPathPreview();
+                return;
+            }
+
+            bool hasActiveNode = hoverPreviewMarkers.Count > 0 && hoverPreviewMarkers[0] != null && hoverPreviewMarkers[0].activeSelf;
+            bool hasActiveLink = hoverPreviewLinks.Count > 0 && hoverPreviewLinks[0] != null && hoverPreviewLinks[0].activeSelf;
+
+            if (!hasActiveNode && !hasActiveLink)
+            {
+                ShowHoverPathPreviewImmediate(remainingPath);
+                return;
+            }
+
+            int version = ++hoverPreviewConsumeVersion;
+            float duration = Mathf.Max(0.02f, hoverPreviewConsumeDuration);
+
+            if (hasActiveNode)
+            {
+                Tween.Scale(hoverPreviewMarkers[0].transform, Vector3.zero, duration, Ease.InBack);
+            }
+
+            if (hasActiveLink)
+            {
+                Tween.Scale(hoverPreviewLinks[0].transform, Vector3.zero, duration, Ease.InBack);
+            }
+
+            Tween.Delay(duration, () =>
+            {
+                if (version != hoverPreviewConsumeVersion)
+                {
+                    return;
+                }
+
+                ShowHoverPathPreviewImmediate(remainingPath);
+            });
         }
 
         public void ClearHoverPathPreview()
         {
+            hoverPreviewConsumeVersion++;
+
             for (int i = 0; i < hoverPreviewMarkers.Count; i++)
             {
                 if (hoverPreviewMarkers[i] != null)
                 {
                     hoverPreviewMarkers[i].SetActive(false);
+                }
+            }
+
+            for (int i = 0; i < hoverPreviewLinks.Count; i++)
+            {
+                if (hoverPreviewLinks[i] != null)
+                {
+                    hoverPreviewLinks[i].SetActive(false);
                 }
             }
         }
@@ -319,7 +471,12 @@ namespace projectsplippy
 
                     Vector3 cameraFacingDir = -cachedCamera.transform.forward;
                     billboard.rotation = Quaternion.LookRotation(cameraFacingDir.normalized, Vector3.up);
-                    billboard.Rotate(farmlandBillboardTilt, 0f, 0f, Space.Self);
+
+                    // Treat tilt as roll so sprites stay upright and do not creep upward visually.
+                    if (Mathf.Abs(farmlandBillboardTilt) > 0.001f)
+                    {
+                        billboard.Rotate(0f, 0f, farmlandBillboardTilt, Space.Self);
+                    }
 
                     if (i < visual.farmlandBillboardRenderers.Count && visual.farmlandBillboardRenderers[i] != null)
                     {
@@ -603,14 +760,14 @@ namespace projectsplippy
 
                 sr.sharedMaterial = ResolveFarmlandBillboardMaterial();
 
-                Vector2 planarOffset = FindPlanarOffset(i, visual.farmlandOffsets, half, separationRadius, farmlandBillboardDepthBiasPercent);
+                Vector2 planarOffset = FindPlanarOffset(i, visual.farmlandOffsets, half, separationRadius, farmlandBillboardDepthBiasPercent, visual.transform);
                 float offsetX = planarOffset.x;
                 float offsetZ = planarOffset.y;
                 Vector3 localOffset = new Vector3(offsetX, billboardLocalY, offsetZ);
                 visual.farmlandOffsets[i] = localOffset;
                 go.transform.localPosition = localOffset;
                 go.transform.localScale = new Vector3(farmlandBillboardSize.x, farmlandBillboardSize.y, 1f);
-                go.transform.localEulerAngles = new Vector3(farmlandBillboardTilt, Random.Range(-farmlandBillboardRandomYaw, farmlandBillboardRandomYaw), 0f);
+                go.transform.localEulerAngles = Vector3.zero;
 
                 int cropCount = farmlandCropSprites != null ? farmlandCropSprites.Length : 0;
                 visual.farmlandCropIndices[i] = cropCount > 0 ? Random.Range(0, cropCount) : -1;
@@ -748,17 +905,31 @@ namespace projectsplippy
             }
         }
 
-        private Vector2 FindPlanarOffset(int index, Vector3[] existingOffsets, float half, float separationRadius, float depthBiasPercent)
+        private Vector2 FindPlanarOffset(int index, Vector3[] existingOffsets, float half, float separationRadius, float depthBiasPercent, Transform tileTransform)
         {
             int attempts = Mathf.Max(1, farmlandBillboardPlacementAttempts);
-            float depthBias = Mathf.Clamp(depthBiasPercent, -0.49f, 0.49f) * (half * 2f);
+            float depthBias = Mathf.Clamp(depthBiasPercent, -0.25f, 0.25f) * (half * 2f);
             float sizeDrivenSeparation = Mathf.Max(0f, farmlandBillboardSize.x * 0.95f);
             float effectiveSeparation = Mathf.Max(separationRadius, sizeDrivenSeparation);
+            Vector2 biasDir = Vector2.up;
+
+            if (cachedCamera != null && tileTransform != null)
+            {
+                Vector3 localFacing = tileTransform.InverseTransformDirection(-cachedCamera.transform.forward);
+                Vector2 projected = new Vector2(localFacing.x, localFacing.z);
+
+                if (projected.sqrMagnitude > 0.0001f)
+                {
+                    biasDir = projected.normalized;
+                }
+            }
 
             if (effectiveSeparation <= 0.0001f || index <= 0 || existingOffsets == null)
             {
                 Vector2 direct = new Vector2(Random.Range(-half, half), Random.Range(-half, half));
-                direct.y = Mathf.Clamp(direct.y + depthBias, -half, half);
+                direct += biasDir * depthBias;
+                direct.x = Mathf.Clamp(direct.x, -half, half);
+                direct.y = Mathf.Clamp(direct.y, -half, half);
                 return direct;
             }
 
@@ -768,7 +939,9 @@ namespace projectsplippy
             for (int attempt = 0; attempt < attempts; attempt++)
             {
                 Vector2 candidate = new Vector2(Random.Range(-half, half), Random.Range(-half, half));
-                candidate.y = Mathf.Clamp(candidate.y + depthBias, -half, half);
+                candidate += biasDir * depthBias;
+                candidate.x = Mathf.Clamp(candidate.x, -half, half);
+                candidate.y = Mathf.Clamp(candidate.y, -half, half);
                 float nearest = float.MaxValue;
 
                 for (int prev = 0; prev < index; prev++)
@@ -887,29 +1060,44 @@ namespace projectsplippy
 
             while (hoverPreviewMarkers.Count < desired)
             {
-                GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Quad);
-                marker.name = "HoverPathMarker";
-                marker.transform.SetParent(groundParent, true);
-
-                Collider collider = marker.GetComponent<Collider>();
-
-                if (collider != null)
-                {
-                    Destroy(collider);
-                }
-
-                Renderer renderer = marker.GetComponent<Renderer>();
-
-                if (renderer != null)
-                {
-                    renderer.sharedMaterial = ResolveHoverPreviewMaterial();
-                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-                    renderer.receiveShadows = false;
-                }
-
-                marker.SetActive(false);
-                hoverPreviewMarkers.Add(marker);
+                hoverPreviewMarkers.Add(CreateHoverPrimitive("HoverPathMarker"));
             }
+        }
+
+        private void EnsureHoverLinkMarkerCount(int count)
+        {
+            int desired = Mathf.Max(0, count);
+
+            while (hoverPreviewLinks.Count < desired)
+            {
+                hoverPreviewLinks.Add(CreateHoverPrimitive("HoverPathLink"));
+            }
+        }
+
+        private GameObject CreateHoverPrimitive(string name)
+        {
+            GameObject marker = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            marker.name = name;
+            marker.transform.SetParent(groundParent, true);
+
+            Collider collider = marker.GetComponent<Collider>();
+
+            if (collider != null)
+            {
+                Destroy(collider);
+            }
+
+            Renderer renderer = marker.GetComponent<Renderer>();
+
+            if (renderer != null)
+            {
+                renderer.sharedMaterial = ResolveHoverPreviewMaterial();
+                renderer.shadowCastingMode = ShadowCastingMode.Off;
+                renderer.receiveShadows = false;
+            }
+
+            marker.SetActive(false);
+            return marker;
         }
 
         private Material ResolveHoverPreviewMaterial()
@@ -927,8 +1115,23 @@ namespace projectsplippy
             }
 
             hoverPreviewMaterial = new Material(shader);
-            hoverPreviewMaterial.SetColor(BaseColorProperty, hoverPreviewColor);
+            hoverPreviewMaterial.SetColor(InkColorProperty, hoverPreviewColor);
+            hoverPreviewMaterial.SetFloat(StrokeWidthProperty, hoverPreviewStrokeWidth);
+            hoverPreviewMaterial.SetFloat(JitterAmpProperty, hoverPreviewJitterAmount);
+            hoverPreviewMaterial.SetFloat(JitterFreqProperty, hoverPreviewJitterFrequency);
+            hoverPreviewMaterial.SetFloat(JitterSpeedProperty, hoverPreviewJitterSpeed);
+            hoverPreviewMaterial.SetFloat(FillAlphaProperty, hoverPreviewFillAlpha);
             return hoverPreviewMaterial;
+        }
+
+        private MaterialPropertyBlock GetHoverMarkerPropertyBlock()
+        {
+            if (hoverMarkerPropertyBlock == null)
+            {
+                hoverMarkerPropertyBlock = new MaterialPropertyBlock();
+            }
+
+            return hoverMarkerPropertyBlock;
         }
 
         private float GetCellTopY(Vector2Int cell)
@@ -996,16 +1199,6 @@ namespace projectsplippy
             }
 
             return maxY == float.MinValue ? visual.transform.position.y : maxY;
-        }
-
-        private MaterialPropertyBlock GetHoverMarkerPropertyBlock()
-        {
-            if (hoverMarkerPropertyBlock == null)
-            {
-                hoverMarkerPropertyBlock = new MaterialPropertyBlock();
-            }
-
-            return hoverMarkerPropertyBlock;
         }
 
         private void CacheHydrationLevelObjects(TileVisual visual)
