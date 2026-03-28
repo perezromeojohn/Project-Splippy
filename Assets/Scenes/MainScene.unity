@@ -309,7 +309,7 @@ Transform:
   m_GameObject: {fileID: 330585543}
   serializedVersion: 2
   m_LocalRotation: {x: 0.5, y: 0, z: 0, w: 0.8660254}
-  m_LocalPosition: {x: 0, y: 7, z: -5}
+  m_LocalPosition: {x: 0, y: 7.2, z: -4.6}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -704,18 +704,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.RunStateController
   startingDroplets: 100
   maxDroplets: 100
-  hopCost: 1
-  sanitationInfectCost: 10
-  farmlandBloomReward: 5
-  ecosystemBloomReward: 10
-  sanitationBloomReward: 5
-  marineStepReward: 20
-  clearAnyTileScore: 5
-  pollutedSanitationClearScore: 5
-  marineClearScore: 20
-  chain2Score: 15
-  chain3Score: 25
-  chain4PlusScore: 40
+  clickCost: 15
+  pathTileCost: 1
+  streakIncreaseRefund: 2
+  marineReward: 20
+  logPathScoreDebug: 1
   scoreText: {fileID: 990908597}
   waterText: {fileID: 418684985}
 --- !u!1 &729955185
@@ -728,6 +721,7 @@ GameObject:
   m_Component:
   - component: {fileID: 729955186}
   - component: {fileID: 729955187}
+  - component: {fileID: 729955188}
   m_Layer: 0
   m_Name: GameManager
   m_TagString: Untagged
@@ -772,24 +766,13 @@ MonoBehaviour:
   playerMapName: Player
   moveTowardsActionName: MoveTowards
   maxGameplayPathRange: 8
-  firstStepWaterCost: 5
-  secondStepWaterCost: 3
-  sustainedStepWaterCost: 1
   tileRules:
-    farmlandMaxProgress: 3
-    ecosystemMaxProgress: 4
-    marineMaxProgress: 1
-    ecosystemDecayTurns: 1
     sanitationTimeoutTurns: 1
-  replacementsPerTurn: 6
-  farmlandLockTurns: 4
-  rockChancePercent: 15
-  fillerPercent: 50
-  farmlandPercent: 32
-  marinePercent: 3
-  droughtEveryTurns: 5
-  droughtHydrationLoss: 1
-  droughtNewTilesCount: 12
+    farmlandCropVariantCount: 0
+  farmlandPercent: 94
+  ecosystemPercent: 2
+  sanitationPercent: 2
+  marinePercent: 5
   splippy: {fileID: 761744921}
   moveDurationPerCell: 0.2
   splippyHeightOffset: 0.6
@@ -800,6 +783,21 @@ MonoBehaviour:
   splippySquashAmount: 0.14
   landingSettleDuration: 0.06
   landingSettleEase: 27
+--- !u!114 &729955188
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 729955185}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cd867eb1a64bea940812d3ffc7fe8c44, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.GridTileOutlineNeighborMaskUpdater
+  groundRootName: GroundRoot
+  tileNamePrefix: Tile_
+  updatesPerSecond: 8
 --- !u!1 &761744917
 GameObject:
   m_ObjectHideFlags: 0
@@ -1008,8 +1006,6 @@ MonoBehaviour:
   groundParent: {fileID: 1342870387}
   fallbackGroundTilePrefab: {fileID: 0}
   tilePrefabs:
-  - type: 0
-    prefab: {fileID: 6485958818215022136, guid: eb8f79f4a67943a448f3f9df8772c35b, type: 3}
   - type: 1
     prefab: {fileID: 1003852824644336638, guid: 5e39cf89243279043a9e1fe9bd953860, type: 3}
   - type: 2
@@ -1018,7 +1014,7 @@ MonoBehaviour:
     prefab: {fileID: 4300521981809138703, guid: c369398b1d977e24e9f1f8684558d172, type: 3}
   - type: 4
     prefab: {fileID: 8294655559294444476, guid: 34210a06588416d498d8508409531e79, type: 3}
-  - type: 5
+  - type: 6
     prefab: {fileID: 6902261625229823188, guid: 6d0c9c2a022ca394cb6da1640b4af4d2, type: 3}
   tileYOffset: -0.1
   groundTopYOffset: 0.1
@@ -1031,43 +1027,21 @@ MonoBehaviour:
   tileReplaceFlipOutEase: 27
   spreadPulseScaleMultiplier: 1.2
   spreadPulseDuration: 0.12
-  hydrationLevelPulseDuration: 0.1
-  hydrationLevelPulseScaleMultiplier: 1.2
   materializeRiseEase: 9
-  showProgressRings: 0
-  ringYOffset: 0.5
-  ringRadius: 0.2
-  ringWidth: 1
-  ringSegments: 24
-  farmlandRingColor: {r: 0.43, g: 0.86, b: 0.35, a: 1}
-  ecosystemRingColor: {r: 0.18, g: 0.62, b: 0.28, a: 1}
-  sanitationRingColor: {r: 0.18, g: 0.78, b: 0.95, a: 1}
-  marineRingColor: {r: 0.2, g: 0.45, b: 1, a: 1}
-  useFarmlandBillboards: 1
   farmlandBillboardMaterial: {fileID: 2100000, guid: e8cdec0cf915a9d438273057e0852e06, type: 2}
-  farmlandSproutSprite: {fileID: 21300000, guid: 778587a2fe5801e4dbee916ed60b2822, type: 3}
-  farmlandCropSprites:
-  - {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
-  - {fileID: 21300000, guid: 04e3e472c243f3d4fbb9090d6ee59ed0, type: 3}
-  - {fileID: 21300000, guid: dd4804264223caa4ebeef900e8f08325, type: 3}
-  farmlandBillboardCount: 3
-  farmlandBillboardMarginPercent: 0
-  farmlandBillboardBaseYOffset: 0.5
-  farmlandBillboardSize: {x: 0.4, y: 0.4}
-  farmlandBillboardSeparationRadiusPercent: 0.25
-  farmlandBillboardPlacementAttempts: 40
-  farmlandBillboardDepthBiasPercent: -0.12
-  farmlandBillboardTilt: 0
-  farmlandBillboardRandomYaw: 12
+  farmlandCropSpriteEntries:
+  - crop: 0
+    sprite: {fileID: 21300000, guid: dd4804264223caa4ebeef900e8f08325, type: 3}
+  - crop: 1
+    sprite: {fileID: 21300000, guid: 778587a2fe5801e4dbee916ed60b2822, type: 3}
+  - crop: 2
+    sprite: {fileID: 21300000, guid: 04e3e472c243f3d4fbb9090d6ee59ed0, type: 3}
+  - crop: 3
+    sprite: {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
   farmlandBillboardTint: {r: 1, g: 1, b: 1, a: 1}
   billboardInteractorRadius: 0.5
   farmlandBillboardCastShadows: 1
   farmlandBillboardReceiveShadows: 1
-  farmlandBillboardSortingBase: 200
-  farmlandBillboardSortPerUnit: 60
-  farmlandBillboardPopDuration: 0.2
-  farmlandBillboardPopStagger: 0.03
-  farmlandBillboardPopEase: 27
   showHoverPathPreview: 1
   hoverPreviewMaterial: {fileID: 2100000, guid: 66477ee559f24b1429e7f3332a28468f, type: 2}
   hoverPreviewColor: {r: 0.34901962, g: 0.85882354, b: 1, a: 0.72156864}
@@ -1339,8 +1313,8 @@ Transform:
   m_GameObject: {fileID: 1109600771}
   serializedVersion: 2
   m_LocalRotation: {x: 0.42261827, y: 0, z: 0, w: 0.9063079}
-  m_LocalPosition: {x: 0, y: -9.99, z: 2.39}
-  m_LocalScale: {x: 42.44, y: 23.872498, z: 2.2104163}
+  m_LocalPosition: {x: 0, y: -9.58, z: 2.88}
+  m_LocalScale: {x: 44.69, y: 25.138123, z: 2.3276038}
   m_ConstrainProportionsScale: 1
   m_Children: []
   m_Father: {fileID: 0}

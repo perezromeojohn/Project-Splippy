@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
@@ -9,23 +10,14 @@ namespace projectsplippy
         [SerializeField] private int startingDroplets = 100;
         [SerializeField] private int maxDroplets = 100;
 
-        [Header("Droplet Costs")]
-        [SerializeField] private int hopCost = 1;
-        [SerializeField] private int sanitationInfectCost = 10;
+        [Header("Economy")]
+        [SerializeField, Min(0)] private int clickCost = 15;
+        [SerializeField, Min(0)] private int pathTileCost = 1;
+        [SerializeField, Min(0)] private int streakIncreaseRefund = 2;
+        [SerializeField, Min(0)] private int marineReward = 20;
 
-        [Header("Droplet Rewards")]
-        [SerializeField] private int farmlandBloomReward = 5;
-        [SerializeField] private int ecosystemBloomReward = 10;
-        [SerializeField] private int sanitationBloomReward = 5;
-        [SerializeField] private int marineStepReward = 20;
-
-        [Header("Score")]
-        [SerializeField] private int clearAnyTileScore = 5;
-        [SerializeField] private int pollutedSanitationClearScore = 5;
-        [SerializeField] private int marineClearScore = 20;
-        [SerializeField] private int chain2Score = 15;
-        [SerializeField] private int chain3Score = 25;
-        [SerializeField] private int chain4PlusScore = 40;
+        [Header("Debug")]
+        [SerializeField] private bool logPathScoreDebug = true;
 
         [Header("UI")]
         [SerializeField] private TMP_Text scoreText;
@@ -39,18 +31,10 @@ namespace projectsplippy
         {
             startingDroplets = Mathf.Max(1, startingDroplets);
             maxDroplets = Mathf.Max(startingDroplets, maxDroplets);
-            hopCost = Mathf.Max(0, hopCost);
-            sanitationInfectCost = Mathf.Max(0, sanitationInfectCost);
-            farmlandBloomReward = Mathf.Max(0, farmlandBloomReward);
-            ecosystemBloomReward = Mathf.Max(0, ecosystemBloomReward);
-            sanitationBloomReward = Mathf.Max(0, sanitationBloomReward);
-            marineStepReward = Mathf.Max(0, marineStepReward);
-            clearAnyTileScore = Mathf.Max(0, clearAnyTileScore);
-            pollutedSanitationClearScore = Mathf.Max(0, pollutedSanitationClearScore);
-            marineClearScore = Mathf.Max(0, marineClearScore);
-            chain2Score = Mathf.Max(0, chain2Score);
-            chain3Score = Mathf.Max(0, chain3Score);
-            chain4PlusScore = Mathf.Max(0, chain4PlusScore);
+            clickCost = Mathf.Max(0, clickCost);
+            pathTileCost = Mathf.Max(0, pathTileCost);
+            streakIncreaseRefund = Mathf.Max(0, streakIncreaseRefund);
+            marineReward = Mathf.Max(0, marineReward);
 
             IsGameOver = false;
             CurrentWaterReserve = startingDroplets;
@@ -58,94 +42,126 @@ namespace projectsplippy
             RefreshHud();
         }
 
-        public bool ApplyHopCost(int hops = 1, bool evaluateGameOver = true)
+        public bool CanAffordPath(int tileSteps)
         {
-            if (IsGameOver)
-            {
-                return true;
-            }
-
-            int hopCount = Mathf.Max(1, hops);
-            CurrentWaterReserve -= hopCount * hopCost;
-            RefreshHud();
-
-            if (evaluateGameOver && CurrentWaterReserve <= 0)
-            {
-                TriggerGameOver();
-            }
-
-            return IsGameOver;
+            int steps = Mathf.Max(0, tileSteps);
+            int totalCost = clickCost + (steps * pathTileCost);
+            return CurrentWaterReserve >= totalCost;
         }
 
-        public bool ApplyStepOutcome(TileType enteredType, TileLandingResult landingResult, bool marineConsumed, int connectedClusterSize)
+        public bool ApplyPathClickCost()
+        {
+            return ApplyEconomyAndScore(-clickCost, 0);
+        }
+
+        public bool ApplyPathResolution(IReadOnlyList<TileStepResult> stepResults, IReadOnlyList<string> collisionOrder = null)
+        {
+            if (IsGameOver || stepResults == null || stepResults.Count == 0)
+            {
+                return IsGameOver;
+            }
+
+            int baseScore = 0;
+            int sanitationTouches = 0;
+            int marineTouches = 0;
+            int streakIncreaseEvents = 0;
+            int? previousEffectiveCropVariant = null;
+            int streakLength = 0;
+            var debugParts = logPathScoreDebug ? new List<string>(stepResults.Count) : null;
+
+            for (int i = 0; i < stepResults.Count; i++)
+            {
+                TileStepResult step = stepResults[i];
+                int awarded = 0;
+
+                if (step.EnteredType == TileType.Sanitation)
+                {
+                    sanitationTouches++;
+                }
+
+                if (step.EnteredType == TileType.Marine)
+                {
+                    marineTouches++;
+                }
+
+                int? effectiveCropVariant = ResolveEffectiveCropVariant(step, previousEffectiveCropVariant);
+                string label = ResolveDebugLabel(step, collisionOrder, i);
+
+                if (!effectiveCropVariant.HasValue)
+                {
+                    awarded = 1;
+                    baseScore += awarded;
+                    previousEffectiveCropVariant = null;
+                    streakLength = 0;
+
+                    if (debugParts != null)
+                    {
+                        debugParts.Add($"+{awarded} {label}");
+                    }
+
+                    continue;
+                }
+
+                if (previousEffectiveCropVariant.HasValue && effectiveCropVariant.Value == previousEffectiveCropVariant.Value)
+                {
+                    streakLength = Mathf.Max(1, streakLength + 1);
+                    awarded = streakLength;
+                    baseScore += awarded;
+                    streakIncreaseEvents++;
+                }
+                else
+                {
+                    streakLength = 1;
+                    awarded = 1;
+                    baseScore += awarded;
+                }
+
+                previousEffectiveCropVariant = effectiveCropVariant.Value;
+
+                if (debugParts != null)
+                {
+                    debugParts.Add($"+{awarded} {label}");
+                }
+            }
+
+            int scoreMultiplier = 1;
+
+            for (int i = 0; i < sanitationTouches; i++)
+            {
+                scoreMultiplier *= 2;
+            }
+
+            int scoreDelta = baseScore * scoreMultiplier;
+            int traversalCost = stepResults.Count * pathTileCost;
+            int waterDelta = (streakIncreaseEvents * streakIncreaseRefund) + (marineTouches * marineReward) - traversalCost;
+
+            if (debugParts != null)
+            {
+                string chain = string.Join(" -> ", debugParts);
+                Debug.Log($"PathScoreDebug: {chain} | base={baseScore} | sanitation x{scoreMultiplier} | final={scoreDelta} | waterDelta={waterDelta}");
+            }
+
+            return ApplyEconomyAndScore(waterDelta, scoreDelta);
+        }
+
+        public bool ApplyEconomyAndScore(int waterDelta, int scoreDelta, bool clampToReservoir = true)
         {
             if (IsGameOver)
             {
                 return true;
             }
 
-            int delta = 0;
-            int scoreDelta = 0;
-            bool isFarmOrEcoStep = enteredType == TileType.Farmland || enteredType == TileType.Ecosystem;
-            bool clearedThisStep = marineConsumed;
-            bool canScore = enteredType != TileType.Filler && enteredType != TileType.Rock;
+            CurrentWaterReserve += waterDelta;
 
-            if (landingResult != null)
+            if (clampToReservoir)
             {
-                if (!isFarmOrEcoStep)
-                {
-                    delta -= Mathf.Max(0, landingResult.PollutedCells.Count) * sanitationInfectCost;
-                }
-
-                if (landingResult.LandedCellBloomed)
-                {
-                    clearedThisStep = true;
-
-                    switch (enteredType)
-                    {
-                        case TileType.Farmland:
-                            delta += farmlandBloomReward;
-                            break;
-                        case TileType.Ecosystem:
-                            delta += ecosystemBloomReward;
-                            break;
-                        case TileType.Sanitation:
-                            delta += sanitationBloomReward;
-                            break;
-                    }
-
-                    if (canScore)
-                    {
-                        scoreDelta += clearAnyTileScore;
-                    }
-
-                    if (enteredType == TileType.Sanitation && landingResult.LandedCellWasPolluted)
-                    {
-                        scoreDelta += pollutedSanitationClearScore;
-                    }
-                }
+                CurrentWaterReserve = Mathf.Clamp(CurrentWaterReserve, 0, maxDroplets);
             }
 
-            if (marineConsumed)
-            {
-                delta += marineStepReward;
-
-                if (canScore)
-                {
-                    scoreDelta += marineClearScore;
-                }
-            }
-
-            if (clearedThisStep && canScore)
-            {
-                scoreDelta += GetChainScore(connectedClusterSize);
-            }
-
-            CurrentWaterReserve = Mathf.Clamp(CurrentWaterReserve + delta, 0, maxDroplets);
             CurrentScore += Mathf.Max(0, scoreDelta);
             RefreshHud();
 
-            if (CurrentWaterReserve <= 0)
+            if (CurrentWaterReserve == 0)
             {
                 TriggerGameOver();
             }
@@ -153,24 +169,29 @@ namespace projectsplippy
             return IsGameOver;
         }
 
-        private int GetChainScore(int clusterSize)
+        private static int? ResolveEffectiveCropVariant(TileStepResult step, int? previousEffectiveCropVariant)
         {
-            if (clusterSize >= 4)
+            if (step.EnteredType == TileType.Farmland)
             {
-                return chain4PlusScore;
+                return step.EnteredCropVariantIndex < 0 ? (int?)null : step.EnteredCropVariantIndex;
             }
 
-            if (clusterSize == 3)
+            if (step.EnteredType == TileType.Ecosystem)
             {
-                return chain3Score;
+                return previousEffectiveCropVariant;
             }
 
-            if (clusterSize == 2)
+            return null;
+        }
+
+        private static string ResolveDebugLabel(TileStepResult step, IReadOnlyList<string> collisionOrder, int index)
+        {
+            if (collisionOrder != null && index >= 0 && index < collisionOrder.Count && !string.IsNullOrWhiteSpace(collisionOrder[index]))
             {
-                return chain2Score;
+                return collisionOrder[index];
             }
 
-            return 0;
+            return step.EnteredType.ToString();
         }
 
         private void TriggerGameOver()

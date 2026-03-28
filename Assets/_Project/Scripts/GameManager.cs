@@ -33,27 +33,15 @@ namespace projectsplippy
 
         [Header("Path Authoring")]
         [SerializeField, Min(1)] private int maxGameplayPathRange = 8;
-        [SerializeField, Min(1)] private int firstStepWaterCost = 5;
-        [SerializeField, Min(1)] private int secondStepWaterCost = 3;
-        [SerializeField, Min(1)] private int sustainedStepWaterCost = 1;
 
         [Header("Tile Rules")]
         [SerializeField] private TileRules tileRules = default;
 
-        [Header("Board Turn")]
-        [SerializeField, Min(0)] private int replacementsPerTurn = 2;
-        [SerializeField, Min(0)] private int farmlandLockTurns = 2;
-        [SerializeField, Range(0, 100)] private int rockChancePercent = 12;
-
-        [Header("Early Board Mix (%)")]
-        [SerializeField, Range(0, 100)] private int fillerPercent = 60;
-        [SerializeField, Range(0, 100)] private int farmlandPercent = 32;
-        [SerializeField, Range(0, 100)] private int marinePercent = 8;
-
-        [Header("Drought")]
-        [SerializeField, Min(1)] private int droughtEveryTurns = 5;
-        [SerializeField, Min(0)] private int droughtHydrationLoss = 1;
-        [SerializeField, Min(0)] private int droughtNewTilesCount = 3;
+        [Header("Tile Frequency (%)")]
+        [SerializeField, Range(0, 100)] private int farmlandPercent = 72;
+        [SerializeField, Range(0, 100)] private int ecosystemPercent = 4;
+        [SerializeField, Range(0, 100)] private int sanitationPercent = 8;
+        [SerializeField, Range(0, 100)] private int marinePercent = 16;
 
         [Header("Player")]
         [SerializeField] private Transform splippy;
@@ -70,14 +58,13 @@ namespace projectsplippy
         private Camera mainCamera;
         private InputAction moveTowardsAction;
         private TileBoardSystem tileBoardSystem;
-        private readonly List<Vector2Int> clearedSanitationSources = new List<Vector2Int>();
+        private readonly List<TileStepResult> deferredPathStepResults = new List<TileStepResult>();
         private readonly List<Vector2Int> authoredGameplayPath = new List<Vector2Int>();
 
         private Vector2Int currentCell;
         private bool isMoving;
         private bool suppressGameplayClick;
         private Vector3 splippyBaseScale = Vector3.one;
-        private int completedTurns;
         private GamePhase currentPhase = GamePhase.Gameplay;
 
         public int GridSize => gridSize;
@@ -134,8 +121,7 @@ namespace projectsplippy
             currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
             ResetGameplayPath();
 
-            tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildBoardTurnRules(), BuildSpawnWeights());
-            completedTurns = 0;
+            tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildSpawnWeights());
             SetupInput();
 
             if (preGameFlow != null)
@@ -380,8 +366,23 @@ namespace projectsplippy
                 return false;
             }
 
+            if (runState != null)
+            {
+                if (!runState.CanAffordPath(authoredGameplayPath.Count - 1))
+                {
+                    return false;
+                }
+
+                bool clickCostGameOver = runState.ApplyPathClickCost();
+
+                if (clickCostGameOver)
+                {
+                    return false;
+                }
+            }
+
             var path = new List<Vector2Int>(authoredGameplayPath);
-            clearedSanitationSources.Clear();
+            deferredPathStepResults.Clear();
             isMoving = true;
 
             // Keep preview visible and consume it step-by-step while moving.
@@ -423,7 +424,6 @@ namespace projectsplippy
         public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
         {
             currentPhase = GamePhase.Revealing;
-            completedTurns = 0;
 
             tileBoardSystem.InitializeBoard(currentCell);
             Vector2Int center = CenterCell;
@@ -463,7 +463,14 @@ namespace projectsplippy
                 {
                     Vector2Int cell = ringCells[i];
                     TileType type = tileBoardSystem.GetTileType(cell);
-                    boardView.PlayTileReplacementFlip(cell, type);
+                    int farmlandVariantIndex = -1;
+
+                    if (type == TileType.Farmland && tileBoardSystem.TryGetTile(cell, out TileData tile))
+                    {
+                        farmlandVariantIndex = tile.CropVariantIndex;
+                    }
+
+                    boardView.PlayTileReplacementFlip(cell, type, forcedFarmlandCropVariantIndex: farmlandVariantIndex);
                 }
 
                 if (dist < maxDistance)
@@ -584,7 +591,7 @@ namespace projectsplippy
                 return;
             }
 
-            clearedSanitationSources.Clear();
+            deferredPathStepResults.Clear();
             isMoving = true;
             boardView.ShowHoverPathPreviewImmediate(path);
             MoveAlongPath(path, 1, path.Count - 1);
@@ -632,7 +639,6 @@ namespace projectsplippy
                         {
                             currentCell = nextCell;
                             UpdateRemainingMovementPreview(path, index);
-                            bool hopGameOver = currentPhase == GamePhase.Gameplay && runState != null && runState.ApplyHopCost(GetStepWaterCost(index), evaluateGameOver: false);
 
                             if (currentPhase == GamePhase.Lobby)
                             {
@@ -648,55 +654,11 @@ namespace projectsplippy
                                 return;
                             }
 
-                            if (hopGameOver)
-                            {
-                                isMoving = false;
-                                return;
-                            }
-
                             if (tileBoardSystem != null)
                             {
                                 TileStepResult stepResult = tileBoardSystem.ProcessStep(nextCell);
-                                bool stepGameOver = runState != null && runState.ApplyStepOutcome(
-                                    stepResult.EnteredType,
-                                    stepResult.LandingResult,
-                                    stepResult.MarineConsumed,
-                                    stepResult.ConnectedClusterSize);
-
-                                if (stepResult.EnteredType == TileType.Sanitation && stepResult.LandingResult.LandedCellBloomed)
-                                {
-                                    clearedSanitationSources.Add(nextCell);
-                                }
-
-                                if (stepResult.LandingResult.LandedCellBloomed)
-                                {
-                                    boardView.PlayTileTapFeedback(nextCell);
-                                }
-
+                                deferredPathStepResults.Add(stepResult);
                                 boardView.PlayTileLandingFeedback(nextCell);
-
-                                for (int i = 0; i < stepResult.LandingResult.DecayedCells.Count; i++)
-                                {
-                                    boardView.PlayTileLandingFeedback(stepResult.LandingResult.DecayedCells[i]);
-                                }
-
-                                for (int i = 0; i < stepResult.LandingResult.PollutedCells.Count; i++)
-                                {
-                                    boardView.PlayTileLandingFeedback(stepResult.LandingResult.PollutedCells[i]);
-                                }
-
-                                if (stepResult.CurrentType != stepResult.EnteredType)
-                                {
-                                    boardView.PlayTileReplacementFlip(nextCell, stepResult.CurrentType);
-                                }
-
-                                boardView.RefreshProgressVisuals(tileBoardSystem);
-
-                                if (stepGameOver)
-                                {
-                                    isMoving = false;
-                                    return;
-                                }
                             }
 
                             if (runState != null && runState.IsGameOver)
@@ -718,40 +680,7 @@ namespace projectsplippy
                 return;
             }
 
-            List<Vector2Int> spawnedSanitation = tileBoardSystem.SpreadSanitationToAdjacent(clearedSanitationSources, currentCell);
-            clearedSanitationSources.Clear();
-
-            for (int i = 0; i < spawnedSanitation.Count; i++)
-            {
-                boardView.PlayTileReplacementFlip(spawnedSanitation[i], TileType.Sanitation, pulseAfterReplace: true);
-            }
-
-            if (spawnedSanitation.Count > 0)
-            {
-                boardView.RefreshProgressVisuals(tileBoardSystem);
-            }
-
-            completedTurns++;
-
-            if (droughtEveryTurns > 0 && completedTurns % droughtEveryTurns == 0)
-            {
-                DroughtResult drought = tileBoardSystem.ApplyDrought(currentCell, droughtHydrationLoss, droughtNewTilesCount);
-
-                for (int i = 0; i < drought.DehydratedCells.Count; i++)
-                {
-                    boardView.PlayTileLandingFeedback(drought.DehydratedCells[i]);
-                }
-
-                foreach (KeyValuePair<Vector2Int, TileType> replacement in drought.ReplacedTiles)
-                {
-                    boardView.PlayTileReplacementFlip(replacement.Key, replacement.Value);
-                }
-
-                if (drought.DehydratedCells.Count > 0 || drought.ReplacedTiles.Count > 0)
-                {
-                    boardView.RefreshProgressVisuals(tileBoardSystem);
-                }
-            }
+            ResolveDeferredPathResults();
         }
 
         private void UpdateRemainingMovementPreview(List<Vector2Int> fullPath, int landedIndex)
@@ -773,21 +702,6 @@ namespace projectsplippy
             boardView.ConsumeHoverPreviewStep(remainingPath);
         }
 
-        private int GetStepWaterCost(int stepIndexInPath)
-        {
-            if (stepIndexInPath <= 1)
-            {
-                return Mathf.Max(1, firstStepWaterCost);
-            }
-
-            if (stepIndexInPath == 2)
-            {
-                return Mathf.Max(1, secondStepWaterCost);
-            }
-
-            return Mathf.Max(1, sustainedStepWaterCost);
-        }
-
         private int GetMaxAffordableAdditionalSteps(int existingSteps)
         {
             if (runState == null)
@@ -795,21 +709,18 @@ namespace projectsplippy
                 return Mathf.Max(1, maxGameplayPathRange);
             }
 
-            int water = Mathf.Max(0, runState.CurrentWaterReserve);
             int additional = 0;
-            int safetyCap = Mathf.Max(1, maxGameplayPathRange);
+            int safetyCap = Mathf.Max(1, Mathf.Max(1, maxGameplayPathRange) - Mathf.Max(0, existingSteps));
 
             while (additional < safetyCap)
             {
-                int stepIndex = existingSteps + additional + 1;
-                int cost = GetStepWaterCost(stepIndex);
+                int totalStepsAfterAppend = existingSteps + additional + 1;
 
-                if (water < cost)
+                if (!runState.CanAffordPath(totalStepsAfterAppend))
                 {
                     break;
                 }
 
-                water -= cost;
                 additional++;
             }
 
@@ -849,69 +760,117 @@ namespace projectsplippy
         {
             TileRules fallback = TileRules.Default;
 
-            if (rules.farmlandMaxProgress <= 0)
-            {
-                rules.farmlandMaxProgress = fallback.farmlandMaxProgress;
-            }
-
-            if (rules.ecosystemMaxProgress <= 0)
-            {
-                rules.ecosystemMaxProgress = fallback.ecosystemMaxProgress;
-            }
-
-            if (rules.marineMaxProgress <= 0)
-            {
-                rules.marineMaxProgress = fallback.marineMaxProgress;
-            }
-
-            if (rules.ecosystemDecayTurns <= 0)
-            {
-                rules.ecosystemDecayTurns = fallback.ecosystemDecayTurns;
-            }
-
             if (rules.sanitationTimeoutTurns <= 0)
             {
                 rules.sanitationTimeoutTurns = fallback.sanitationTimeoutTurns;
             }
+
+            int cropVariantCount = boardView != null ? boardView.AvailableCropSpriteCount : fallback.farmlandCropVariantCount;
+            rules.farmlandCropVariantCount = Mathf.Max(1, cropVariantCount);
 
             return rules;
         }
 
         private TileSpawnWeights BuildSpawnWeights()
         {
-            fillerPercent = Mathf.Clamp(fillerPercent, 0, 100);
             farmlandPercent = Mathf.Clamp(farmlandPercent, 0, 100);
+            ecosystemPercent = Mathf.Clamp(ecosystemPercent, 0, 100);
+            sanitationPercent = Mathf.Clamp(sanitationPercent, 0, 100);
             marinePercent = Mathf.Clamp(marinePercent, 0, 100);
 
-            int total = fillerPercent + farmlandPercent + marinePercent;
+            int total = farmlandPercent + ecosystemPercent + sanitationPercent + marinePercent;
 
             if (total <= 0)
             {
-                return TileSpawnWeights.EarlyGameDefault;
+                return TileSpawnWeights.Default;
             }
 
             float invTotal = 1f / total;
 
             return new TileSpawnWeights
             {
-                fillerWeight = fillerPercent * invTotal,
                 farmlandWeight = farmlandPercent * invTotal,
+                ecosystemWeight = ecosystemPercent * invTotal,
+                sanitationWeight = sanitationPercent * invTotal,
                 marineWeight = marinePercent * invTotal
             };
         }
 
-        private BoardTurnRules BuildBoardTurnRules()
+        private void ResolveDeferredPathResults()
         {
-            replacementsPerTurn = Mathf.Max(0, replacementsPerTurn);
-            farmlandLockTurns = Mathf.Max(0, farmlandLockTurns);
-            rockChancePercent = Mathf.Clamp(rockChancePercent, 0, 100);
-
-            return new BoardTurnRules
+            if (tileBoardSystem == null)
             {
-                replacementsPerTurn = replacementsPerTurn,
-                farmlandReplaceLockTurns = farmlandLockTurns,
-                rockChanceFromFiller = rockChancePercent / 100f
-            };
+                return;
+            }
+
+            if (deferredPathStepResults.Count > 0)
+            {
+                List<string> collisionOrder = BuildCollisionOrderDebug(deferredPathStepResults);
+                runState?.ApplyPathResolution(deferredPathStepResults, collisionOrder);
+                var traversedCells = new List<Vector2Int>(deferredPathStepResults.Count);
+
+                for (int i = 0; i < deferredPathStepResults.Count; i++)
+                {
+                    TileStepResult step = deferredPathStepResults[i];
+                    traversedCells.Add(step.Cell);
+
+                    if (step.LandingResult != null)
+                    {
+                        for (int e = 0; e < step.LandingResult.ExpiredToTrashCells.Count; e++)
+                        {
+                            Vector2Int expiredCell = step.LandingResult.ExpiredToTrashCells[e];
+                            boardView.PlayTileReplacementFlip(expiredCell, TileType.Trash, pulseAfterReplace: true);
+                        }
+                    }
+                }
+
+                Dictionary<Vector2Int, TileType> traversedReplacements = tileBoardSystem.ReplaceTraversedTiles(traversedCells, currentCell);
+
+                foreach (KeyValuePair<Vector2Int, TileType> replacement in traversedReplacements)
+                {
+                    int farmlandVariantIndex = -1;
+
+                    if (replacement.Value == TileType.Farmland && tileBoardSystem.TryGetTile(replacement.Key, out TileData tile))
+                    {
+                        farmlandVariantIndex = tile.CropVariantIndex;
+                    }
+
+                    boardView.PlayTileReplacementFlip(
+                        replacement.Key,
+                        replacement.Value,
+                        pulseAfterReplace: true,
+                        forcedFarmlandCropVariantIndex: farmlandVariantIndex);
+                }
+            }
+
+            boardView.RefreshProgressVisuals(tileBoardSystem);
+            deferredPathStepResults.Clear();
+        }
+
+        private List<string> BuildCollisionOrderDebug(IReadOnlyList<TileStepResult> steps)
+        {
+            var labels = new List<string>(steps != null ? steps.Count : 0);
+
+            if (steps == null)
+            {
+                return labels;
+            }
+
+            for (int i = 0; i < steps.Count; i++)
+            {
+                TileStepResult step = steps[i];
+
+                if (step.EnteredType == TileType.Farmland)
+                {
+                    labels.Add(boardView != null ? boardView.GetCropVariantLabel(step.EnteredCropVariantIndex) : $"Crop[{step.EnteredCropVariantIndex}]" );
+                }
+                else
+                {
+                    labels.Add(step.EnteredType.ToString());
+                }
+            }
+
+            return labels;
         }
 
         private void OnDrawGizmosSelected()

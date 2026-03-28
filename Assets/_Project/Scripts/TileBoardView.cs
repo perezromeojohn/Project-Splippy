@@ -15,23 +15,24 @@ namespace projectsplippy
             public GameObject prefab;
         }
 
+        [System.Serializable]
+        private struct FarmlandCropSpriteEntry
+        {
+            public TILE.FarmlandCropType crop;
+            public Sprite sprite;
+        }
+
         private sealed class TileVisual
         {
             public Transform transform;
-            public LineRenderer ring;
-            public readonly Dictionary<int, GameObject> hydrationLevels = new Dictionary<int, GameObject>();
-            public readonly List<Transform> farmlandBillboards = new List<Transform>();
-            public readonly List<SpriteRenderer> farmlandBillboardRenderers = new List<SpriteRenderer>();
-            public Vector3[] farmlandOffsets;
-            public int[] farmlandCropIndices;
-            public int billboardHydrationLevel = -1;
+            public readonly List<SpriteRenderer> farmlandPrefabSprites = new List<SpriteRenderer>();
+            public TILE helper;
+            public int farmlandCropVariantIndex = -1;
             public bool isSwapping;
-            public int shownHydrationLevel;
             public Vector3 baseScale;
             public Vector3 baseRotation;
             public Tween scaleTween;
             public Tween rotateTween;
-            public Tween levelTween;
         }
 
         [Header("Ground")]
@@ -51,44 +52,28 @@ namespace projectsplippy
         [SerializeField] private Ease tileReplaceFlipOutEase = Ease.OutBack;
         [SerializeField] private float spreadPulseScaleMultiplier = 1.2f;
         [SerializeField] private float spreadPulseDuration = 0.12f;
-        [SerializeField] private float hydrationLevelPulseDuration = 0.1f;
-        [SerializeField] private float hydrationLevelPulseScaleMultiplier = 1.2f;
         [SerializeField] private Ease materializeRiseEase = Ease.OutCubic;
 
-        [Header("Progress Ring")]
-        [SerializeField] private bool showProgressRings = false;
-        [SerializeField] private float ringYOffset = 0.12f;
-        [SerializeField] private float ringRadius = 0.34f;
-        [SerializeField] private float ringWidth = 0.035f;
-        [SerializeField] private int ringSegments = 24;
-        [SerializeField] private Color farmlandRingColor = new Color(0.43f, 0.86f, 0.35f, 1f);
-        [SerializeField] private Color ecosystemRingColor = new Color(0.18f, 0.62f, 0.28f, 1f);
-        [SerializeField] private Color sanitationRingColor = new Color(0.18f, 0.78f, 0.95f, 1f);
-        [SerializeField] private Color marineRingColor = new Color(0.2f, 0.45f, 1f, 1f);
-
-        [Header("Farmland Billboards")]
-        [SerializeField] private bool useFarmlandBillboards = true;
+        [Header("Farmland Sprites")]
         [SerializeField] private Material farmlandBillboardMaterial;
-        [SerializeField] private Sprite farmlandSproutSprite;
-        [SerializeField] private Sprite[] farmlandCropSprites;
-        [SerializeField, Min(1)] private int farmlandBillboardCount = 3;
-        [SerializeField, Range(0f, 0.49f)] private float farmlandBillboardMarginPercent = 0.02f;
-        [SerializeField] private float farmlandBillboardBaseYOffset = 0.008f;
-        [SerializeField] private Vector2 farmlandBillboardSize = new Vector2(0.35f, 0.5f);
-        [SerializeField, Range(0f, 1f)] private float farmlandBillboardSeparationRadiusPercent = 0.2f;
-        [SerializeField] private int farmlandBillboardPlacementAttempts = 24;
-        [SerializeField, Range(-0.49f, 0.49f)] private float farmlandBillboardDepthBiasPercent = -0.15f;
-        [SerializeField] private float farmlandBillboardTilt = 0f;
-        [SerializeField] private float farmlandBillboardRandomYaw = 12f;
+        [SerializeField] private List<FarmlandCropSpriteEntry> farmlandCropSpriteEntries = new List<FarmlandCropSpriteEntry>();
         [SerializeField] private Color farmlandBillboardTint = Color.white;
         [SerializeField] private float billboardInteractorRadius = 1.6f;
         [SerializeField] private bool farmlandBillboardCastShadows = true;
         [SerializeField] private bool farmlandBillboardReceiveShadows = true;
-        [SerializeField] private int farmlandBillboardSortingBase = 200;
-        [SerializeField] private float farmlandBillboardSortPerUnit = 60f;
-        [SerializeField] private float farmlandBillboardPopDuration = 0.2f;
-        [SerializeField] private float farmlandBillboardPopStagger = 0.03f;
-        [SerializeField] private Ease farmlandBillboardPopEase = Ease.OutBack;
+
+        public int AvailableCropSpriteCount => Mathf.Max(1, farmlandCropSpriteEntries != null ? farmlandCropSpriteEntries.Count : 0);
+
+        public string GetCropVariantLabel(int variantIndex)
+        {
+            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
+            {
+                return "Crop";
+            }
+
+            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
+            return farmlandCropSpriteEntries[index].crop.ToString();
+        }
 
         [Header("Hover Preview")]
         [SerializeField] private bool showHoverPathPreview = true;
@@ -116,10 +101,8 @@ namespace projectsplippy
         private readonly List<GameObject> hoverPreviewMarkers = new List<GameObject>();
         private readonly List<GameObject> hoverPreviewLinks = new List<GameObject>();
         private MaterialPropertyBlock hoverMarkerPropertyBlock;
-        private MaterialPropertyBlock billboardPropertyBlock;
         private bool hoverPreviewSnapNextUpdate;
         private int hoverPreviewConsumeVersion;
-        private Camera cachedCamera;
         private Vector3 currentInteractorPosition;
 
         private static readonly int InkColorProperty = Shader.PropertyToID("_InkColor");
@@ -137,6 +120,46 @@ namespace projectsplippy
         private float cellSize;
         private Vector3 gridCenter;
 
+        private void OnValidate()
+        {
+            EnsureFarmlandEntryDefaults();
+        }
+
+        private void Awake()
+        {
+            EnsureFarmlandEntryDefaults();
+        }
+
+        private void EnsureFarmlandEntryDefaults()
+        {
+            if (farmlandCropSpriteEntries == null)
+            {
+                farmlandCropSpriteEntries = new List<FarmlandCropSpriteEntry>();
+            }
+
+            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Wheat);
+            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Sprout);
+            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Corn);
+            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Carrot);
+        }
+
+        private void EnsureFarmlandEntryExists(TILE.FarmlandCropType cropType)
+        {
+            for (int i = 0; i < farmlandCropSpriteEntries.Count; i++)
+            {
+                if (farmlandCropSpriteEntries[i].crop == cropType)
+                {
+                    return;
+                }
+            }
+
+            farmlandCropSpriteEntries.Add(new FarmlandCropSpriteEntry
+            {
+                crop = cropType,
+                sprite = null
+            });
+        }
+
         public void BuildBoard(int gridSize, float cellSize, Vector3 gridCenter, TileBoardSystem boardSystem)
         {
             BuildBoard(gridSize, cellSize, gridCenter, boardSystem, null, null);
@@ -153,7 +176,6 @@ namespace projectsplippy
             this.gridSize = gridSize;
             this.cellSize = Mathf.Max(0.1f, cellSize);
             this.gridCenter = gridCenter;
-            cachedCamera = Camera.main;
 
             CachePrefabs();
             EnsureGroundParent();
@@ -413,78 +435,16 @@ namespace projectsplippy
 
                 if (!boardSystem.TryGetTile(cell, out TileData tile))
                 {
-                    if (visual.ring != null)
-                    {
-                        visual.ring.enabled = false;
-                    }
-
-                    SetHydrationLevelVisual(visual, 0);
-                    UpdateFarmlandBillboards(visual, null);
+                    UpdateFarmlandPrefabSprites(visual, null);
                     continue;
                 }
 
-                if (showProgressRings && visual.ring != null)
-                {
-                    UpdateProgressRing(visual.ring, tile);
-                }
-                else if (visual.ring != null)
-                {
-                    visual.ring.enabled = false;
-                }
-
-                int hydrationToShow = tile.Progress > 0 ? tile.Progress : 0;
-                bool useBillboardFarmlandVisuals = useFarmlandBillboards && tile.Type == TileType.Farmland;
-                SetHydrationLevelVisual(visual, useBillboardFarmlandVisuals ? 0 : hydrationToShow);
-                UpdateFarmlandBillboards(visual, tile);
+                UpdateFarmlandPrefabSprites(visual, tile);
             }
         }
 
         private void LateUpdate()
         {
-            if (!useFarmlandBillboards)
-            {
-                return;
-            }
-
-            if (cachedCamera == null)
-            {
-                cachedCamera = Camera.main;
-            }
-
-            if (cachedCamera == null)
-            {
-                return;
-            }
-
-            foreach (KeyValuePair<Vector2Int, TileVisual> kv in tileVisuals)
-            {
-                TileVisual visual = kv.Value;
-
-                for (int i = 0; i < visual.farmlandBillboards.Count; i++)
-                {
-                    Transform billboard = visual.farmlandBillboards[i];
-
-                    if (billboard == null || !billboard.gameObject.activeSelf)
-                    {
-                        continue;
-                    }
-
-                    Vector3 cameraFacingDir = -cachedCamera.transform.forward;
-                    billboard.rotation = Quaternion.LookRotation(cameraFacingDir.normalized, Vector3.up);
-
-                    // Treat tilt as roll so sprites stay upright and do not creep upward visually.
-                    if (Mathf.Abs(farmlandBillboardTilt) > 0.001f)
-                    {
-                        billboard.Rotate(0f, 0f, farmlandBillboardTilt, Space.Self);
-                    }
-
-                    if (i < visual.farmlandBillboardRenderers.Count && visual.farmlandBillboardRenderers[i] != null)
-                    {
-                        visual.farmlandBillboardRenderers[i].sortingOrder = CalculateBillboardSortingOrder(billboard.position, i);
-                    }
-                }
-            }
-
             Shader.SetGlobalVector(InteractorProperty, new Vector4(
                 currentInteractorPosition.x,
                 currentInteractorPosition.y,
@@ -507,7 +467,7 @@ namespace projectsplippy
             PlayTileScaleFeedback(cell, tileLandingScaleMultiplier, tileLandingDuration);
         }
 
-        public void PlayTileReplacementFlip(Vector2Int cell, TileType newType, bool pulseAfterReplace = false)
+        public void PlayTileReplacementFlip(Vector2Int cell, TileType newType, bool pulseAfterReplace = false, int forcedFarmlandCropVariantIndex = -1)
         {
             if (!tileVisuals.TryGetValue(cell, out TileVisual visual))
             {
@@ -521,7 +481,7 @@ namespace projectsplippy
             }
 
             visual.isSwapping = true;
-            PlayFarmlandBillboardShrink(visual, Mathf.Max(0.05f, tileReplaceFlipDuration * 0.35f));
+            TweenOutChildSpriteRenderers(visual.transform, Mathf.Max(0.05f, tileReplaceFlipDuration * 0.35f));
 
             float halfDuration = Mathf.Max(0.05f, tileReplaceFlipDuration * 0.5f);
             Vector3 foldIn = visual.baseRotation + new Vector3(90f, 0f, 0f);
@@ -537,6 +497,20 @@ namespace projectsplippy
                         return;
                     }
 
+                    if (newType == TileType.Farmland)
+                    {
+                        ApplyFarmlandVariantToVisual(replaced, forcedFarmlandCropVariantIndex);
+                    }
+                    else
+                    {
+                        replaced.farmlandCropVariantIndex = -1;
+
+                        if (replaced.helper != null)
+                        {
+                            replaced.helper.SetFarmlandCrop(TILE.FarmlandCropType.Sprout);
+                        }
+                    }
+
                     replaced.isSwapping = true;
 
                     replaced.transform.localEulerAngles = foldOutStart;
@@ -545,7 +519,6 @@ namespace projectsplippy
                         {
                             replaced.transform.localEulerAngles = replaced.baseRotation;
                             replaced.isSwapping = false;
-                            InitializeReplacementBillboardVisuals(replaced, newType);
 
                             if (pulseAfterReplace)
                             {
@@ -589,14 +562,14 @@ namespace projectsplippy
             var visual = new TileVisual
             {
                 transform = tileObject.transform,
-                ring = CreateProgressRing(tileObject.transform),
+                helper = EnsureTileHelper(tileObject, type),
                 baseScale = tileObject.transform.localScale,
-                baseRotation = tileObject.transform.localEulerAngles,
-                shownHydrationLevel = -1
+                baseRotation = tileObject.transform.localEulerAngles
             };
 
-            CacheHydrationLevelObjects(visual);
-            SetHydrationLevelVisual(visual, 0);
+            ConfigureChildSpriteShadows(tileObject.transform);
+            CacheFarmlandPrefabSprites(visual);
+
             return visual;
         }
 
@@ -605,11 +578,6 @@ namespace projectsplippy
             if (!tileVisuals.TryGetValue(cell, out TileVisual oldVisual))
             {
                 return;
-            }
-
-            if (oldVisual.levelTween.isAlive)
-            {
-                oldVisual.levelTween.Stop();
             }
 
             if (oldVisual.scaleTween.isAlive)
@@ -630,368 +598,212 @@ namespace projectsplippy
             tileVisuals[cell] = CreateVisual(cell, newType);
         }
 
-        private void SetHydrationLevelVisual(TileVisual visual, int hydrationLevel)
+        private static void TweenOutChildSpriteRenderers(Transform root, float duration)
         {
-            int clampedLevel = Mathf.Max(0, hydrationLevel);
-
-            if (visual.shownHydrationLevel == clampedLevel)
-            {
-                return;
-            }
-
-            foreach (KeyValuePair<int, GameObject> kv in visual.hydrationLevels)
-            {
-                if (kv.Value != null)
-                {
-                    kv.Value.SetActive(false);
-                }
-            }
-
-            if (clampedLevel > 0 && visual.hydrationLevels.TryGetValue(clampedLevel, out GameObject levelObject) && levelObject != null)
-            {
-                levelObject.SetActive(true);
-
-                if (clampedLevel > visual.shownHydrationLevel)
-                {
-                    PlayHydrationLevelPulse(visual, levelObject.transform);
-                }
-            }
-
-            visual.shownHydrationLevel = clampedLevel;
-        }
-
-        private void UpdateFarmlandBillboards(TileVisual visual, TileData tile)
-        {
-            if (visual == null)
-            {
-                return;
-            }
-
-            if (visual.isSwapping)
-            {
-                SetFarmlandBillboardsActive(visual, false);
-                return;
-            }
-
-            bool isFarmland = useFarmlandBillboards && tile != null && tile.Type == TileType.Farmland;
-
-            if (!isFarmland)
-            {
-                SetFarmlandBillboardsActive(visual, false);
-                visual.billboardHydrationLevel = -1;
-                return;
-            }
-
-            EnsureFarmlandBillboards(visual);
-            bool activated = SetFarmlandBillboardsActive(visual, true);
-
-            if (activated && !visual.isSwapping)
-            {
-                PlayFarmlandBillboardPop(visual);
-            }
-
-            int hydration = Mathf.Max(0, tile.Progress);
-
-            if (visual.billboardHydrationLevel == hydration)
-            {
-                return;
-            }
-
-            visual.billboardHydrationLevel = hydration;
-            bool showSprout = hydration <= 1;
-
-            for (int i = 0; i < visual.farmlandBillboards.Count; i++)
-            {
-                Transform billboard = visual.farmlandBillboards[i];
-
-                if (billboard == null)
-                {
-                    continue;
-                }
-
-                SpriteRenderer renderer = billboard.GetComponent<SpriteRenderer>();
-
-                if (renderer == null)
-                {
-                    continue;
-                }
-
-                renderer.sprite = showSprout ? farmlandSproutSprite : GetCropSprite(visual, i);
-                renderer.color = farmlandBillboardTint;
-            }
-        }
-
-        private void EnsureFarmlandBillboards(TileVisual visual)
-        {
-            if (visual.farmlandBillboards.Count > 0)
-            {
-                return;
-            }
-
-            int count = Mathf.Max(1, farmlandBillboardCount);
-            visual.farmlandOffsets = new Vector3[count];
-            visual.farmlandCropIndices = new int[count];
-
-            int seed = (visual.transform.position.GetHashCode() * 397) ^ count;
-            Random.State oldState = Random.state;
-            Random.InitState(seed);
-
-            float margin = Mathf.Clamp01(farmlandBillboardMarginPercent) * cellSize;
-            float half = Mathf.Max(0.02f, (cellSize * 0.5f) - margin);
-            float separationRadius = Mathf.Clamp01(farmlandBillboardSeparationRadiusPercent) * cellSize;
-            float topWorldY = GetVisualTopY(visual);
-            float localTopY = visual.transform.InverseTransformPoint(new Vector3(
-                visual.transform.position.x,
-                topWorldY,
-                visual.transform.position.z)).y;
-            float billboardLocalY = localTopY + farmlandBillboardBaseYOffset;
-
-            for (int i = 0; i < count; i++)
-            {
-                GameObject go = new GameObject($"FarmlandBillboard_{i}");
-                go.layer = visual.transform.gameObject.layer;
-                go.transform.SetParent(visual.transform, false);
-
-                var sr = go.AddComponent<SpriteRenderer>();
-                sr.sortingOrder = CalculateBillboardSortingOrder(go.transform.position, i);
-                sr.color = farmlandBillboardTint;
-                sr.shadowCastingMode = farmlandBillboardCastShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
-                sr.receiveShadows = farmlandBillboardReceiveShadows;
-
-                sr.sharedMaterial = ResolveFarmlandBillboardMaterial();
-
-                Vector2 planarOffset = FindPlanarOffset(i, visual.farmlandOffsets, half, separationRadius, farmlandBillboardDepthBiasPercent, visual.transform);
-                float offsetX = planarOffset.x;
-                float offsetZ = planarOffset.y;
-                Vector3 localOffset = new Vector3(offsetX, billboardLocalY, offsetZ);
-                visual.farmlandOffsets[i] = localOffset;
-                go.transform.localPosition = localOffset;
-                go.transform.localScale = new Vector3(farmlandBillboardSize.x, farmlandBillboardSize.y, 1f);
-                go.transform.localEulerAngles = Vector3.zero;
-
-                int cropCount = farmlandCropSprites != null ? farmlandCropSprites.Length : 0;
-                visual.farmlandCropIndices[i] = cropCount > 0 ? Random.Range(0, cropCount) : -1;
-                visual.farmlandBillboards.Add(go.transform);
-                visual.farmlandBillboardRenderers.Add(sr);
-            }
-
-            Random.state = oldState;
-            visual.billboardHydrationLevel = -1;
-        }
-
-        private bool SetFarmlandBillboardsActive(TileVisual visual, bool isActive)
-        {
-            bool anyActivated = false;
-
-            for (int i = 0; i < visual.farmlandBillboards.Count; i++)
-            {
-                Transform billboard = visual.farmlandBillboards[i];
-
-                if (billboard != null)
-                {
-                    if (isActive && !billboard.gameObject.activeSelf)
-                    {
-                        anyActivated = true;
-                    }
-
-                    billboard.gameObject.SetActive(isActive);
-                }
-            }
-
-            return anyActivated;
-        }
-
-        private void PlayFarmlandBillboardPop(TileVisual visual)
-        {
-            if (visual == null)
-            {
-                return;
-            }
-
-            float duration = Mathf.Max(0.05f, farmlandBillboardPopDuration);
-            float stagger = Mathf.Max(0f, farmlandBillboardPopStagger);
-            Vector3 targetScale = new Vector3(farmlandBillboardSize.x, farmlandBillboardSize.y, 1f);
-
-            for (int i = 0; i < visual.farmlandBillboards.Count; i++)
-            {
-                Transform billboard = visual.farmlandBillboards[i];
-
-                if (billboard == null || !billboard.gameObject.activeSelf)
-                {
-                    continue;
-                }
-
-                billboard.localScale = Vector3.zero;
-
-                float delay = i * stagger;
-
-                if (delay > 0f)
-                {
-                    Transform capturedBillboard = billboard;
-                    TileVisual capturedVisual = visual;
-                    Tween.Delay(delay, () =>
-                    {
-                        if (capturedBillboard != null && capturedBillboard.gameObject.activeSelf && capturedVisual != null && !capturedVisual.isSwapping)
-                        {
-                            Tween.Scale(capturedBillboard, targetScale, duration, farmlandBillboardPopEase);
-                        }
-                    });
-                }
-                else
-                {
-                    if (!visual.isSwapping)
-                    {
-                        Tween.Scale(billboard, targetScale, duration, farmlandBillboardPopEase);
-                    }
-                }
-            }
-        }
-
-        private void PlayFarmlandBillboardShrink(TileVisual visual, float duration)
-        {
-            if (visual == null)
+            if (root == null)
             {
                 return;
             }
 
             float clampedDuration = Mathf.Max(0.03f, duration);
+            SpriteRenderer[] childSprites = root.GetComponentsInChildren<SpriteRenderer>(includeInactive: false);
+            var seen = new HashSet<Transform>();
 
-            for (int i = 0; i < visual.farmlandBillboards.Count; i++)
+            for (int i = 0; i < childSprites.Length; i++)
             {
-                Transform billboard = visual.farmlandBillboards[i];
+                SpriteRenderer sr = childSprites[i];
 
-                if (billboard == null || !billboard.gameObject.activeSelf)
+                if (sr == null || sr.transform == root)
                 {
                     continue;
                 }
 
-                Tween.Scale(billboard, Vector3.zero, clampedDuration, Ease.InBack);
+                if (!seen.Add(sr.transform))
+                {
+                    continue;
+                }
+
+                Tween.Scale(sr.transform, Vector3.zero, clampedDuration, Ease.InBack);
             }
         }
 
-        private void InitializeReplacementBillboardVisuals(TileVisual visual, TileType newType)
+        private void ApplyFarmlandVariantToVisual(TileVisual visual, int variantIndex)
         {
             if (visual == null)
             {
                 return;
             }
 
-            if (!useFarmlandBillboards || newType != TileType.Farmland)
+            int resolvedVariantIndex = TileGridModel.NormalizeCropVariantIndex(variantIndex, Mathf.Max(1, AvailableCropSpriteCount));
+            visual.farmlandCropVariantIndex = resolvedVariantIndex;
+            Sprite speciesSprite = GetCropSpriteForVariant(resolvedVariantIndex);
+            TILE.FarmlandCropType cropType = GetCropTypeForVariant(resolvedVariantIndex);
+
+            for (int i = 0; i < visual.farmlandPrefabSprites.Count; i++)
             {
-                SetFarmlandBillboardsActive(visual, false);
-                return;
-            }
+                SpriteRenderer sr = visual.farmlandPrefabSprites[i];
 
-            EnsureFarmlandBillboards(visual);
-            SetFarmlandBillboardsActive(visual, true);
-            visual.billboardHydrationLevel = 0;
-
-            for (int i = 0; i < visual.farmlandBillboardRenderers.Count; i++)
-            {
-                SpriteRenderer renderer = visual.farmlandBillboardRenderers[i];
-
-                if (renderer == null)
+                if (sr == null)
                 {
                     continue;
                 }
 
-                renderer.sprite = farmlandSproutSprite;
-                renderer.color = farmlandBillboardTint;
+                sr.sprite = speciesSprite;
+                sr.enabled = speciesSprite != null;
+                sr.color = farmlandBillboardTint;
+                sr.shadowCastingMode = farmlandBillboardCastShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+                sr.receiveShadows = farmlandBillboardReceiveShadows;
+
+                if (farmlandBillboardMaterial != null)
+                {
+                    sr.sharedMaterial = farmlandBillboardMaterial;
+                }
+                else
+                {
+                    sr.sharedMaterial = ResolveFarmlandBillboardMaterial();
+                }
             }
 
-            if (!visual.isSwapping)
+            if (visual.helper != null)
             {
-                PlayFarmlandBillboardPop(visual);
+                visual.helper.SetFarmlandCrop(cropType);
             }
         }
 
-        private Vector2 FindPlanarOffset(int index, Vector3[] existingOffsets, float half, float separationRadius, float depthBiasPercent, Transform tileTransform)
+        private static TILE EnsureTileHelper(GameObject tileObject, TileType type)
         {
-            int attempts = Mathf.Max(1, farmlandBillboardPlacementAttempts);
-            float depthBias = Mathf.Clamp(depthBiasPercent, -0.25f, 0.25f) * (half * 2f);
-            float sizeDrivenSeparation = Mathf.Max(0f, farmlandBillboardSize.x * 0.95f);
-            float effectiveSeparation = Mathf.Max(separationRadius, sizeDrivenSeparation);
-            Vector2 biasDir = Vector2.up;
-
-            if (cachedCamera != null && tileTransform != null)
+            if (tileObject == null)
             {
-                Vector3 localFacing = tileTransform.InverseTransformDirection(-cachedCamera.transform.forward);
-                Vector2 projected = new Vector2(localFacing.x, localFacing.z);
-
-                if (projected.sqrMagnitude > 0.0001f)
-                {
-                    biasDir = projected.normalized;
-                }
+                return null;
             }
 
-            if (effectiveSeparation <= 0.0001f || index <= 0 || existingOffsets == null)
+            TILE helper = tileObject.GetComponent<TILE>();
+
+            if (helper == null)
             {
-                Vector2 direct = new Vector2(Random.Range(-half, half), Random.Range(-half, half));
-                direct += biasDir * depthBias;
-                direct.x = Mathf.Clamp(direct.x, -half, half);
-                direct.y = Mathf.Clamp(direct.y, -half, half);
-                return direct;
+                helper = tileObject.AddComponent<TILE>();
             }
 
-            Vector2 bestCandidate = Vector2.zero;
-            float bestNearestDist = -1f;
-
-            for (int attempt = 0; attempt < attempts; attempt++)
-            {
-                Vector2 candidate = new Vector2(Random.Range(-half, half), Random.Range(-half, half));
-                candidate += biasDir * depthBias;
-                candidate.x = Mathf.Clamp(candidate.x, -half, half);
-                candidate.y = Mathf.Clamp(candidate.y, -half, half);
-                float nearest = float.MaxValue;
-
-                for (int prev = 0; prev < index; prev++)
-                {
-                    Vector2 prevOffset = new Vector2(existingOffsets[prev].x, existingOffsets[prev].z);
-                    float d = Vector2.Distance(candidate, prevOffset);
-
-                    if (d < nearest)
-                    {
-                        nearest = d;
-                    }
-                }
-
-                if (nearest > bestNearestDist)
-                {
-                    bestNearestDist = nearest;
-                    bestCandidate = candidate;
-                }
-
-                if (nearest >= effectiveSeparation)
-                {
-                    return candidate;
-                }
-            }
-
-            return bestCandidate;
+            helper.SetTileType(type);
+            return helper;
         }
 
-        private Sprite GetCropSprite(TileVisual visual, int billboardIndex)
+        private void CacheFarmlandPrefabSprites(TileVisual visual)
         {
-            if (farmlandCropSprites == null || farmlandCropSprites.Length == 0)
+            visual.farmlandPrefabSprites.Clear();
+
+            if (visual == null || visual.transform == null)
             {
-                return farmlandSproutSprite;
+                return;
             }
 
-            if (visual.farmlandCropIndices == null || billboardIndex < 0 || billboardIndex >= visual.farmlandCropIndices.Length)
-            {
-                return farmlandCropSprites[0];
-            }
+            SpriteRenderer[] sprites = visual.transform.GetComponentsInChildren<SpriteRenderer>(includeInactive: true);
 
-            int cropIndex = Mathf.Clamp(visual.farmlandCropIndices[billboardIndex], 0, farmlandCropSprites.Length - 1);
-            Sprite selected = farmlandCropSprites[cropIndex];
-            return selected != null ? selected : farmlandSproutSprite;
+            for (int i = 0; i < sprites.Length; i++)
+            {
+                SpriteRenderer sr = sprites[i];
+
+                if (sr == null)
+                {
+                    continue;
+                }
+
+                visual.farmlandPrefabSprites.Add(sr);
+            }
         }
 
-        private int CalculateBillboardSortingOrder(Vector3 worldPosition, int indexOffset)
+        private void UpdateFarmlandPrefabSprites(TileVisual visual, TileData tile)
         {
-            // Lower world Z is visually closer on our board, so it should draw on top.
-            int depthOrder = Mathf.RoundToInt(-worldPosition.z * Mathf.Max(1f, farmlandBillboardSortPerUnit));
-            return farmlandBillboardSortingBase + depthOrder + indexOffset;
+            if (visual == null)
+            {
+                return;
+            }
+
+            bool isFarmland = tile != null && tile.Type == TileType.Farmland;
+
+            if (!isFarmland)
+            {
+                visual.farmlandCropVariantIndex = -1;
+
+                if (visual.helper != null)
+                {
+                    visual.helper.SetFarmlandCrop(TILE.FarmlandCropType.Sprout);
+                }
+
+                return;
+            }
+
+            int variantIndex = tile.CropVariantIndex;
+
+            if (visual.farmlandCropVariantIndex == variantIndex)
+            {
+                return;
+            }
+
+            ApplyFarmlandVariantToVisual(visual, variantIndex);
+        }
+
+        private void ConfigureChildSpriteShadows(Transform root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            SpriteRenderer[] childSprites = root.GetComponentsInChildren<SpriteRenderer>(includeInactive: true);
+
+            for (int i = 0; i < childSprites.Length; i++)
+            {
+                SpriteRenderer sr = childSprites[i];
+
+                if (sr == null)
+                {
+                    continue;
+                }
+
+                sr.shadowCastingMode = farmlandBillboardCastShadows ? ShadowCastingMode.On : ShadowCastingMode.Off;
+                sr.receiveShadows = farmlandBillboardReceiveShadows;
+            }
+        }
+
+
+        private Sprite GetCropSpriteForVariant(int variantIndex)
+        {
+            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
+            {
+                return null;
+            }
+
+            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
+            index = Mathf.Clamp(index, 0, farmlandCropSpriteEntries.Count - 1);
+            Sprite selected = farmlandCropSpriteEntries[index].sprite;
+
+            if (selected != null)
+            {
+                return selected;
+            }
+
+            for (int i = 0; i < farmlandCropSpriteEntries.Count; i++)
+            {
+                if (farmlandCropSpriteEntries[i].sprite != null)
+                {
+                    return farmlandCropSpriteEntries[i].sprite;
+                }
+            }
+
+            return null;
+        }
+
+        private TILE.FarmlandCropType GetCropTypeForVariant(int variantIndex)
+        {
+            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
+            {
+                return TILE.FarmlandCropType.Sprout;
+            }
+
+            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
+            index = Mathf.Clamp(index, 0, farmlandCropSpriteEntries.Count - 1);
+            return farmlandCropSpriteEntries[index].crop;
         }
 
         private Material ResolveFarmlandBillboardMaterial()
@@ -1012,25 +824,6 @@ namespace projectsplippy
             return farmlandBillboardMaterial;
         }
 
-        private void PlayHydrationLevelPulse(TileVisual visual, Transform levelTransform)
-        {
-            if (levelTransform == null)
-            {
-                return;
-            }
-
-            if (visual.levelTween.isAlive)
-            {
-                visual.levelTween.Stop();
-            }
-
-            Vector3 baseScale = levelTransform.localScale;
-            float halfDuration = Mathf.Max(0.03f, hydrationLevelPulseDuration * 0.5f);
-            Vector3 pulseScale = baseScale * hydrationLevelPulseScaleMultiplier;
-
-            visual.levelTween = Tween.Scale(levelTransform, pulseScale, halfDuration, cycles: 2, cycleMode: CycleMode.Yoyo);
-        }
-
         private void StopAllVisualTweens()
         {
             foreach (KeyValuePair<Vector2Int, TileVisual> kv in tileVisuals)
@@ -1045,11 +838,6 @@ namespace projectsplippy
                 if (visual.rotateTween.isAlive)
                 {
                     visual.rotateTween.Stop();
-                }
-
-                if (visual.levelTween.isAlive)
-                {
-                    visual.levelTween.Stop();
                 }
             }
         }
@@ -1199,145 +987,6 @@ namespace projectsplippy
             }
 
             return maxY == float.MinValue ? visual.transform.position.y : maxY;
-        }
-
-        private void CacheHydrationLevelObjects(TileVisual visual)
-        {
-            visual.hydrationLevels.Clear();
-
-            if (visual.transform == null)
-            {
-                return;
-            }
-
-            Transform[] children = visual.transform.GetComponentsInChildren<Transform>(true);
-
-            for (int i = 0; i < children.Length; i++)
-            {
-                Transform child = children[i];
-
-                if (child == visual.transform)
-                {
-                    continue;
-                }
-
-                if (!TryParseLevelName(child.name, out int levelIndex))
-                {
-                    continue;
-                }
-
-                visual.hydrationLevels[levelIndex] = child.gameObject;
-                child.gameObject.SetActive(false);
-            }
-        }
-
-        private static bool TryParseLevelName(string name, out int levelIndex)
-        {
-            levelIndex = 0;
-
-            if (string.IsNullOrWhiteSpace(name))
-            {
-                return false;
-            }
-
-            string lower = name.ToLowerInvariant();
-
-            if (!lower.StartsWith("level"))
-            {
-                return false;
-            }
-
-            string suffix = lower.Substring(5).Trim();
-
-            if (suffix.StartsWith("_"))
-            {
-                suffix = suffix.Substring(1);
-            }
-
-            if (!int.TryParse(suffix, out int parsed) || parsed <= 0)
-            {
-                return false;
-            }
-
-            levelIndex = parsed;
-            return true;
-        }
-
-        private LineRenderer CreateProgressRing(Transform parent)
-        {
-            if (!showProgressRings)
-            {
-                return null;
-            }
-
-            var go = new GameObject("ProgressRing");
-            go.transform.SetParent(parent, false);
-            go.transform.localPosition = new Vector3(0f, ringYOffset, 0f);
-            go.transform.localRotation = Quaternion.Euler(90f, 0f, 0f);
-
-            var line = go.AddComponent<LineRenderer>();
-            line.useWorldSpace = false;
-            line.widthMultiplier = ringWidth;
-            line.loop = false;
-            line.positionCount = 0;
-            line.enabled = false;
-
-            return line;
-        }
-
-        private void UpdateProgressRing(LineRenderer ring, TileData tile)
-        {
-            if (tile.MaxProgress <= 0 || tile.Progress <= 0)
-            {
-                ring.enabled = false;
-                return;
-            }
-
-            if (tile.Type == TileType.Filler || tile.Type == TileType.Rock)
-            {
-                ring.enabled = false;
-                return;
-            }
-
-            float ratio = Mathf.Clamp01(tile.Progress / (float)tile.MaxProgress);
-            int segments = Mathf.Max(6, ringSegments);
-            int points = Mathf.Max(2, Mathf.CeilToInt(segments * ratio) + 1);
-
-            ring.enabled = true;
-            ring.loop = ratio >= 0.999f;
-            ring.positionCount = points;
-            Color color = GetRingColor(tile.Type);
-            ring.startColor = color;
-            ring.endColor = color;
-
-            float startAngle = -90f * Mathf.Deg2Rad;
-            float endAngle = startAngle + (Mathf.PI * 2f * ratio);
-
-            for (int i = 0; i < points; i++)
-            {
-                float t = points <= 1 ? 0f : (float)i / (points - 1);
-                float angle = Mathf.Lerp(startAngle, endAngle, t);
-                float x = Mathf.Cos(angle) * ringRadius;
-                float y = Mathf.Sin(angle) * ringRadius;
-                ring.SetPosition(i, new Vector3(x, y, 0f));
-            }
-        }
-
-        private Color GetRingColor(TileType type)
-        {
-            switch (type)
-            {
-                case TileType.Farmland:
-                    return farmlandRingColor;
-                case TileType.Ecosystem:
-                    return ecosystemRingColor;
-                case TileType.Sanitation:
-                    return sanitationRingColor;
-                case TileType.Marine:
-                    return marineRingColor;
-                default:
-                    return Color.white;
-            }
         }
 
         private void CachePrefabs()

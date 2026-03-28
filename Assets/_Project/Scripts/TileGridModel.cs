@@ -10,50 +10,41 @@ namespace projectsplippy
         Ecosystem,
         Sanitation,
         Marine,
-        Rock
+        Rock,
+        Trash
     }
 
     [System.Serializable]
     public struct TileRules
     {
-        public int farmlandMaxProgress;
-        public int ecosystemMaxProgress;
-        public int marineMaxProgress;
-        public int ecosystemDecayTurns;
         public int sanitationTimeoutTurns;
+        public int farmlandCropVariantCount;
 
         public static TileRules Default => new TileRules
         {
-            farmlandMaxProgress = 3,
-            ecosystemMaxProgress = 4,
-            marineMaxProgress = 3,
-            ecosystemDecayTurns = 3,
-            sanitationTimeoutTurns = 4
+            sanitationTimeoutTurns = 4,
+            farmlandCropVariantCount = 3
         };
     }
 
     public class TileData
     {
         public TileType Type;
-        public int Progress;
-        public int MaxProgress;
         public int TurnsSinceTouched;
         public int SanitationTimer;
-        public bool IsPolluted;
+        public int CropVariantIndex;
 
-        public TileData(TileType type, int maxProgress, TileRules rules)
+        public TileData(TileType type, TileRules rules)
         {
             Type = type;
-            Progress = 0;
-            MaxProgress = maxProgress;
             TurnsSinceTouched = 0;
             SanitationTimer = type == TileType.Sanitation ? Mathf.Max(1, rules.sanitationTimeoutTurns) : 0;
-            IsPolluted = false;
+            CropVariantIndex = -1;
         }
 
         public virtual bool IsWalkable()
         {
-            return Type != TileType.Rock;
+            return Type != TileType.Rock && Type != TileType.Trash;
         }
 
         public virtual void ApplyLanding(TileLandingResult result, TileRules rules)
@@ -67,93 +58,71 @@ namespace projectsplippy
 
     public sealed class FarmlandTileData : TileData
     {
-        public FarmlandTileData(int maxProgress, TileRules rules)
-            : base(TileType.Farmland, maxProgress, rules)
+        public FarmlandTileData(TileRules rules, int cropVariantIndex)
+            : base(TileType.Farmland, rules)
         {
-        }
-
-        public override void ApplyLanding(TileLandingResult result, TileRules rules)
-        {
-            Progress = Mathf.Min(MaxProgress, Progress + 1);
+            CropVariantIndex = cropVariantIndex;
         }
     }
 
     public sealed class EcosystemTileData : TileData
     {
-        public EcosystemTileData(int maxProgress, TileRules rules)
-            : base(TileType.Ecosystem, maxProgress, rules)
+        public EcosystemTileData(TileRules rules)
+            : base(TileType.Ecosystem, rules)
         {
         }
 
-        public override void ApplyLanding(TileLandingResult result, TileRules rules)
-        {
-            Progress = Mathf.Min(MaxProgress, Progress + 1);
-        }
-
-        public override void AdvanceUnlandedTurn(TileLandingResult result, TileRules rules, Vector2Int cell)
-        {
-            TurnsSinceTouched++;
-
-            if (Progress > 0 && TurnsSinceTouched >= Mathf.Max(1, rules.ecosystemDecayTurns))
-            {
-                Progress = Mathf.Max(0, Progress - 1);
-                TurnsSinceTouched = 0;
-                result.DecayedCells.Add(cell);
-            }
-        }
     }
 
     public sealed class SanitationTileData : TileData
     {
-        public SanitationTileData(int maxProgress, TileRules rules)
-            : base(TileType.Sanitation, maxProgress, rules)
+        public SanitationTileData(TileRules rules)
+            : base(TileType.Sanitation, rules)
         {
         }
 
         public override void ApplyLanding(TileLandingResult result, TileRules rules)
         {
-            result.LandedCellWasPolluted = IsPolluted;
-            IsPolluted = false;
-            Progress = MaxProgress;
             SanitationTimer = Mathf.Max(1, rules.sanitationTimeoutTurns);
         }
 
         public override void AdvanceUnlandedTurn(TileLandingResult result, TileRules rules, Vector2Int cell)
         {
-            if (IsPolluted)
-            {
-                return;
-            }
-
             SanitationTimer--;
 
             if (SanitationTimer <= 0)
             {
-                IsPolluted = true;
-                Progress = 0;
                 SanitationTimer = 0;
-                result.PollutedCells.Add(cell);
+                result.ExpiredToTrashCells.Add(cell);
             }
         }
     }
 
     public sealed class MarineTileData : TileData
     {
-        public MarineTileData(int maxProgress, TileRules rules)
-            : base(TileType.Marine, maxProgress, rules)
+        public MarineTileData(TileRules rules)
+            : base(TileType.Marine, rules)
         {
-        }
-
-        public override void ApplyLanding(TileLandingResult result, TileRules rules)
-        {
-            Progress = Mathf.Min(MaxProgress, Progress + 1);
         }
     }
 
     public sealed class RockTileData : TileData
     {
-        public RockTileData(int maxProgress, TileRules rules)
-            : base(TileType.Rock, maxProgress, rules)
+        public RockTileData(TileRules rules)
+            : base(TileType.Rock, rules)
+        {
+        }
+
+        public override bool IsWalkable()
+        {
+            return false;
+        }
+    }
+
+    public sealed class TrashTileData : TileData
+    {
+        public TrashTileData(TileRules rules)
+            : base(TileType.Trash, rules)
         {
         }
 
@@ -166,10 +135,7 @@ namespace projectsplippy
     public sealed class TileLandingResult
     {
         public Vector2Int LandedCell;
-        public bool LandedCellBloomed;
-        public bool LandedCellWasPolluted;
-        public readonly List<Vector2Int> DecayedCells = new List<Vector2Int>();
-        public readonly List<Vector2Int> PollutedCells = new List<Vector2Int>();
+        public readonly List<Vector2Int> ExpiredToTrashCells = new List<Vector2Int>();
     }
 
     public sealed class TileGridModel
@@ -216,6 +182,18 @@ namespace projectsplippy
 
             AdvanceDecayAndTimers(landedCell, result);
 
+            for (int i = 0; i < result.ExpiredToTrashCells.Count; i++)
+            {
+                Vector2Int expiredCell = result.ExpiredToTrashCells[i];
+
+                if (expiredCell == landedCell)
+                {
+                    continue;
+                }
+
+                SetTileType(expiredCell, TileType.Trash);
+            }
+
             if (!tiles.TryGetValue(landedCell, out TileData landed))
             {
                 return result;
@@ -224,55 +202,8 @@ namespace projectsplippy
             landed.TurnsSinceTouched = 0;
             landed.ApplyLanding(result, rules);
 
-            if (landed.Progress >= landed.MaxProgress)
-            {
-                result.LandedCellBloomed = true;
-                landed.Progress = 0;
-
-                if (landed.Type == TileType.Sanitation)
-                {
-                    landed.SanitationTimer = Mathf.Max(1, rules.sanitationTimeoutTurns);
-                }
-            }
-
             tiles[landedCell] = landed;
             return result;
-        }
-
-        public List<Vector2Int> ReduceHydrationAll(int amount)
-        {
-            int delta = Mathf.Max(0, amount);
-            var changedCells = new List<Vector2Int>();
-
-            if (delta <= 0)
-            {
-                return changedCells;
-            }
-
-            var keys = new List<Vector2Int>(tiles.Keys);
-
-            for (int i = 0; i < keys.Count; i++)
-            {
-                Vector2Int cell = keys[i];
-                TileData tile = tiles[cell];
-
-                if (tile.Progress <= 0)
-                {
-                    continue;
-                }
-
-                int before = tile.Progress;
-                tile.Progress = Mathf.Max(0, tile.Progress - delta);
-
-                if (tile.Progress != before)
-                {
-                    changedCells.Add(cell);
-                }
-
-                tiles[cell] = tile;
-            }
-
-            return changedCells;
         }
 
         private void AdvanceDecayAndTimers(Vector2Int landedCell, TileLandingResult result)
@@ -297,45 +228,42 @@ namespace projectsplippy
 
         private TileData CreateTileData(TileType type)
         {
-            int maxProgress = GetMaxProgress(type);
-
             switch (type)
             {
                 case TileType.Farmland:
-                    return new FarmlandTileData(maxProgress, rules);
+                    return new FarmlandTileData(rules, RollCropVariantIndex(rules.farmlandCropVariantCount));
                 case TileType.Ecosystem:
-                    return new EcosystemTileData(maxProgress, rules);
+                    return new EcosystemTileData(rules);
                 case TileType.Sanitation:
-                    return new SanitationTileData(maxProgress, rules);
+                    return new SanitationTileData(rules);
                 case TileType.Marine:
-                    return new MarineTileData(maxProgress, rules);
+                    return new MarineTileData(rules);
                 case TileType.Rock:
-                    return new RockTileData(maxProgress, rules);
+                    return new RockTileData(rules);
+                case TileType.Trash:
+                    return new TrashTileData(rules);
                 case TileType.Filler:
                 default:
-                    return new TileData(type, maxProgress, rules);
+                    return new TileData(type, rules);
             }
         }
 
-        private int GetMaxProgress(TileType type)
+        private static int RollCropVariantIndex(int variantCount)
         {
-            switch (type)
+            int count = Mathf.Max(1, variantCount);
+            return Random.Range(0, count);
+        }
+
+        public static int NormalizeCropVariantIndex(int variantIndex, int variantCount)
+        {
+            int count = Mathf.Max(1, variantCount);
+
+            if (variantIndex < 0)
             {
-                case TileType.Filler:
-                    return 0;
-                case TileType.Farmland:
-                    return Mathf.Max(1, rules.farmlandMaxProgress);
-                case TileType.Ecosystem:
-                    return Mathf.Max(1, rules.ecosystemMaxProgress);
-                case TileType.Marine:
-                    return Mathf.Max(1, rules.marineMaxProgress);
-                case TileType.Sanitation:
-                    return 1;
-                case TileType.Rock:
-                    return 0;
-                default:
-                    return 1;
+                return 0;
             }
+
+            return variantIndex % count;
         }
     }
 }
