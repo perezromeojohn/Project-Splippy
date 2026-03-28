@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Collections;
 using PrimeTween;
+using TMPro;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -27,6 +28,7 @@ namespace projectsplippy
             public Transform transform;
             public readonly List<SpriteRenderer> farmlandPrefabSprites = new List<SpriteRenderer>();
             public TILE helper;
+            public TextMeshPro sanitationTurnLabel;
             public int farmlandCropVariantIndex = -1;
             public bool isSwapping;
             public Vector3 baseScale;
@@ -93,6 +95,14 @@ namespace projectsplippy
         [SerializeField] private float hoverPreviewScaleSpeed = 20f;
         [SerializeField, Range(0f, 1f)] private float hoverPreviewSpawnScale = 0.15f;
         [SerializeField] private float hoverPreviewConsumeDuration = 0.08f;
+        [SerializeField] private TMP_FontAsset hoverScorePreviewFont;
+        [SerializeField] private float hoverScorePreviewTextSize = 4f;
+        [SerializeField] private float hoverScorePreviewYOffset = 0.45f;
+
+        [Header("Sanitation Timer Label")]
+        [SerializeField] private TMP_FontAsset sanitationTurnLabelFont;
+        [SerializeField] private float sanitationTurnLabelSize = 3.5f;
+        [SerializeField] private float sanitationTurnLabelYOffset = 0.42f;
 
         public float GroundTopYOffset => tileYOffset + groundTopYOffset;
 
@@ -100,8 +110,12 @@ namespace projectsplippy
         private readonly Dictionary<Vector2Int, TileVisual> tileVisuals = new Dictionary<Vector2Int, TileVisual>();
         private readonly List<GameObject> hoverPreviewMarkers = new List<GameObject>();
         private readonly List<GameObject> hoverPreviewLinks = new List<GameObject>();
+        private readonly List<TextMeshPro> hoverPreviewScoreLabels = new List<TextMeshPro>();
+        private readonly List<int> frozenHoverScorePreview = new List<int>();
+        private readonly List<Color> frozenHoverScoreColors = new List<Color>();
         private MaterialPropertyBlock hoverMarkerPropertyBlock;
         private bool hoverPreviewSnapNextUpdate;
+        private bool hoverScorePreviewFrozen;
         private int hoverPreviewConsumeVersion;
         private Vector3 currentInteractorPosition;
 
@@ -113,7 +127,6 @@ namespace projectsplippy
         private static readonly int JitterSpeedProperty = Shader.PropertyToID("_JitterSpeed");
         private static readonly int SeedProperty = Shader.PropertyToID("_Seed");
         private static readonly int FillAlphaProperty = Shader.PropertyToID("_FillAlpha");
-        private static readonly int BaseMapProperty = Shader.PropertyToID("_BaseMap");
         private static readonly int InteractorProperty = Shader.PropertyToID("_SplippyInteractor");
 
         private int gridSize;
@@ -221,7 +234,10 @@ namespace projectsplippy
             int linkCount = Mathf.Max(0, nodeCount - 1);
             EnsureHoverMarkerCount(nodeCount);
             EnsureHoverLinkMarkerCount(linkCount);
+            EnsureHoverScoreLabelCount(nodeCount);
             var nodePositions = new Vector3[nodeCount];
+            int[] scorePreview = GetHoverScorePreview(path);
+            Color[] scoreColors = GetHoverScoreColors(path);
             bool snapThisUpdate = hoverPreviewSnapNextUpdate;
             hoverPreviewSnapNextUpdate = false;
             float posT = snapThisUpdate ? 1f : (1f - Mathf.Exp(-Mathf.Max(0.01f, hoverPreviewFollowSpeed) * Time.deltaTime));
@@ -248,6 +264,40 @@ namespace projectsplippy
                 marker.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
                 marker.transform.localScale = Vector3.Lerp(marker.transform.localScale, targetScale, scaleT);
                 nodePositions[i] = marker.transform.position;
+
+                TextMeshPro scoreLabel = hoverPreviewScoreLabels[i];
+
+                if (scoreLabel != null)
+                {
+                    bool showScore = i > 0 && i < scorePreview.Length;
+
+                    if (showScore)
+                    {
+                        Vector3 labelPosition = markerPosition + new Vector3(0f, hoverScorePreviewYOffset, 0f);
+
+                        if (!scoreLabel.gameObject.activeSelf)
+                        {
+                            scoreLabel.gameObject.SetActive(true);
+                            scoreLabel.transform.position = labelPosition;
+                            scoreLabel.transform.localScale = Vector3.one * hoverPreviewSpawnScale;
+                        }
+
+                        scoreLabel.transform.position = Vector3.Lerp(scoreLabel.transform.position, labelPosition, posT);
+                        scoreLabel.transform.localScale = Vector3.Lerp(scoreLabel.transform.localScale, Vector3.one, scaleT);
+                        scoreLabel.text = $"+{scorePreview[i]}";
+                        scoreLabel.color = i < scoreColors.Length ? scoreColors[i] : Color.white;
+                        scoreLabel.fontSize = hoverScorePreviewTextSize;
+
+                        if (hoverScorePreviewFont != null)
+                        {
+                            scoreLabel.font = hoverScorePreviewFont;
+                        }
+                    }
+                    else
+                    {
+                        scoreLabel.gameObject.SetActive(false);
+                    }
+                }
 
                 Renderer renderer = marker.GetComponent<Renderer>();
 
@@ -324,12 +374,26 @@ namespace projectsplippy
             {
                 hoverPreviewLinks[i].SetActive(false);
             }
+
+            for (int i = nodeCount; i < hoverPreviewScoreLabels.Count; i++)
+            {
+                if (hoverPreviewScoreLabels[i] != null)
+                {
+                    hoverPreviewScoreLabels[i].gameObject.SetActive(false);
+                }
+            }
         }
 
         public void ShowHoverPathPreviewImmediate(IReadOnlyList<Vector2Int> path)
         {
             hoverPreviewSnapNextUpdate = true;
             ShowHoverPathPreview(path);
+        }
+
+        public void ShowHoverPathPreviewImmediateFrozen(IReadOnlyList<Vector2Int> path)
+        {
+            FreezeHoverScorePreview(path);
+            ShowHoverPathPreviewImmediate(path);
         }
 
         public void ConsumeHoverPreviewStep(IReadOnlyList<Vector2Int> remainingPath)
@@ -369,6 +433,8 @@ namespace projectsplippy
                     return;
                 }
 
+                ConsumeFrozenHoverScoreStep();
+
                 ShowHoverPathPreviewImmediate(remainingPath);
             });
         }
@@ -376,6 +442,9 @@ namespace projectsplippy
         public void ClearHoverPathPreview()
         {
             hoverPreviewConsumeVersion++;
+            hoverScorePreviewFrozen = false;
+            frozenHoverScorePreview.Clear();
+            frozenHoverScoreColors.Clear();
 
             for (int i = 0; i < hoverPreviewMarkers.Count; i++)
             {
@@ -390,6 +459,14 @@ namespace projectsplippy
                 if (hoverPreviewLinks[i] != null)
                 {
                     hoverPreviewLinks[i].SetActive(false);
+                }
+            }
+
+            for (int i = 0; i < hoverPreviewScoreLabels.Count; i++)
+            {
+                if (hoverPreviewScoreLabels[i] != null)
+                {
+                    hoverPreviewScoreLabels[i].gameObject.SetActive(false);
                 }
             }
         }
@@ -436,10 +513,12 @@ namespace projectsplippy
                 if (!boardSystem.TryGetTile(cell, out TileData tile))
                 {
                     UpdateFarmlandPrefabSprites(visual, null);
+                    UpdateSanitationTurnLabel(visual, null);
                     continue;
                 }
 
                 UpdateFarmlandPrefabSprites(visual, tile);
+                UpdateSanitationTurnLabel(visual, tile);
             }
         }
 
@@ -467,7 +546,12 @@ namespace projectsplippy
             PlayTileScaleFeedback(cell, tileLandingScaleMultiplier, tileLandingDuration);
         }
 
-        public void PlayTileReplacementFlip(Vector2Int cell, TileType newType, bool pulseAfterReplace = false, int forcedFarmlandCropVariantIndex = -1)
+        public void PlayTileReplacementFlip(
+            Vector2Int cell,
+            TileType newType,
+            bool pulseAfterReplace = false,
+            int forcedFarmlandCropVariantIndex = -1,
+            int forcedSanitationTurns = -1)
         {
             if (!tileVisuals.TryGetValue(cell, out TileVisual visual))
             {
@@ -509,6 +593,16 @@ namespace projectsplippy
                         {
                             replaced.helper.SetFarmlandCrop(TILE.FarmlandCropType.Sprout);
                         }
+                    }
+
+                    if (newType == TileType.Sanitation)
+                    {
+                        int turns = forcedSanitationTurns > 0 ? forcedSanitationTurns : 2;
+                        UpdateSanitationTurnLabelForTurns(replaced, turns);
+                    }
+                    else
+                    {
+                        UpdateSanitationTurnLabel(replaced, null);
                     }
 
                     replaced.isSwapping = true;
@@ -563,6 +657,7 @@ namespace projectsplippy
             {
                 transform = tileObject.transform,
                 helper = EnsureTileHelper(tileObject, type),
+                sanitationTurnLabel = CreateSanitationTurnLabel(tileObject.transform),
                 baseScale = tileObject.transform.localScale,
                 baseRotation = tileObject.transform.localEulerAngles
             };
@@ -766,6 +861,77 @@ namespace projectsplippy
             }
         }
 
+        private TextMeshPro CreateSanitationTurnLabel(Transform parent)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            GameObject labelObject = new GameObject("SanitationTurnLabel");
+            labelObject.transform.SetParent(parent, false);
+            labelObject.transform.rotation = Quaternion.Euler(60f, 0f, 0f);
+            var label = labelObject.AddComponent<TextMeshPro>();
+            label.alignment = TextAlignmentOptions.Center;
+            label.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            label.verticalAlignment = VerticalAlignmentOptions.Middle;
+            label.textWrappingMode = TextWrappingModes.NoWrap;
+            label.color = Color.white;
+            label.fontSize = sanitationTurnLabelSize;
+            label.text = string.Empty;
+
+            if (sanitationTurnLabelFont != null)
+            {
+                label.font = sanitationTurnLabelFont;
+            }
+
+            labelObject.SetActive(false);
+            return label;
+        }
+
+        private void UpdateSanitationTurnLabel(TileVisual visual, TileData tile)
+        {
+            if (visual == null || visual.sanitationTurnLabel == null)
+            {
+                return;
+            }
+
+            bool show = tile != null && tile.Type == TileType.Sanitation;
+
+            if (!show)
+            {
+                visual.sanitationTurnLabel.gameObject.SetActive(false);
+                return;
+            }
+
+            int turns = Mathf.Max(0, tile.SanitationTimer);
+            UpdateSanitationTurnLabelForTurns(visual, turns);
+        }
+
+        private void UpdateSanitationTurnLabelForTurns(TileVisual visual, int turns)
+        {
+            if (visual == null || visual.sanitationTurnLabel == null)
+            {
+                return;
+            }
+
+            int clampedTurns = Mathf.Max(0, turns);
+            string unit = clampedTurns == 1 ? "turn" : "turns";
+            visual.sanitationTurnLabel.text = $"({clampedTurns} {unit})";
+            visual.sanitationTurnLabel.color = Color.white;
+            visual.sanitationTurnLabel.fontSize = sanitationTurnLabelSize;
+
+            if (sanitationTurnLabelFont != null)
+            {
+                visual.sanitationTurnLabel.font = sanitationTurnLabelFont;
+            }
+
+            Vector3 pos = visual.transform.position;
+            pos.y = GetVisualTopY(visual) + sanitationTurnLabelYOffset;
+            visual.sanitationTurnLabel.transform.position = pos;
+            visual.sanitationTurnLabel.gameObject.SetActive(true);
+        }
+
 
         private Sprite GetCropSpriteForVariant(int variantIndex)
         {
@@ -859,6 +1025,198 @@ namespace projectsplippy
             while (hoverPreviewLinks.Count < desired)
             {
                 hoverPreviewLinks.Add(CreateHoverPrimitive("HoverPathLink"));
+            }
+        }
+
+        private void EnsureHoverScoreLabelCount(int count)
+        {
+            int desired = Mathf.Max(0, count);
+
+            while (hoverPreviewScoreLabels.Count < desired)
+            {
+                hoverPreviewScoreLabels.Add(CreateHoverScoreLabel("HoverScoreLabel"));
+            }
+        }
+
+        private TextMeshPro CreateHoverScoreLabel(string name)
+        {
+            GameObject labelObject = new GameObject(name);
+            labelObject.transform.SetParent(groundParent, true);
+            labelObject.transform.rotation = Quaternion.Euler(60f, 0f, 0f);
+            var text = labelObject.AddComponent<TextMeshPro>();
+            text.text = "+1";
+            text.color = Color.white;
+            text.alignment = TextAlignmentOptions.Center;
+            text.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            text.verticalAlignment = VerticalAlignmentOptions.Middle;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
+            text.fontSize = hoverScorePreviewTextSize;
+            text.outlineWidth = 0f;
+
+            if (hoverScorePreviewFont != null)
+            {
+                text.font = hoverScorePreviewFont;
+            }
+
+            labelObject.SetActive(false);
+            return text;
+        }
+
+        private int[] ComputeHoverScorePreview(IReadOnlyList<Vector2Int> path)
+        {
+            int count = path != null ? path.Count : 0;
+            var scoreDeltas = new int[count];
+
+            if (path == null || path.Count <= 1)
+            {
+                return scoreDeltas;
+            }
+
+            int? previousEffectiveCrop = null;
+            int streakLength = 0;
+
+            for (int i = 1; i < path.Count; i++)
+            {
+                Vector2Int cell = path[i];
+                if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual == null || visual.helper == null)
+                {
+                    scoreDeltas[i] = 1;
+                    previousEffectiveCrop = null;
+                    streakLength = 0;
+                    continue;
+                }
+
+                TILE.TileInspectorType type = visual.helper.CurrentTileType;
+                int? effectiveCrop = null;
+
+                if (type == TILE.TileInspectorType.Farmland)
+                {
+                    effectiveCrop = (int)visual.helper.CurrentFarmlandCrop;
+                }
+                else if (type == TILE.TileInspectorType.Ecosystem)
+                {
+                    effectiveCrop = previousEffectiveCrop;
+                }
+
+                if (!effectiveCrop.HasValue)
+                {
+                    scoreDeltas[i] = 1;
+                    previousEffectiveCrop = null;
+                    streakLength = 0;
+                    continue;
+                }
+
+                if (previousEffectiveCrop.HasValue && previousEffectiveCrop.Value == effectiveCrop.Value)
+                {
+                    streakLength = Mathf.Max(1, streakLength + 1);
+                    scoreDeltas[i] = streakLength;
+                }
+                else
+                {
+                    streakLength = 1;
+                    scoreDeltas[i] = 1;
+                }
+
+                previousEffectiveCrop = effectiveCrop.Value;
+            }
+
+            return scoreDeltas;
+        }
+
+        private int[] GetHoverScorePreview(IReadOnlyList<Vector2Int> path)
+        {
+            int nodeCount = path != null ? path.Count : 0;
+
+            if (nodeCount <= 0)
+            {
+                return new int[0];
+            }
+
+            if (hoverScorePreviewFrozen && frozenHoverScorePreview.Count == nodeCount)
+            {
+                return frozenHoverScorePreview.ToArray();
+            }
+
+            return ComputeHoverScorePreview(path);
+        }
+
+        private Color[] GetHoverScoreColors(IReadOnlyList<Vector2Int> path)
+        {
+            int count = path != null ? path.Count : 0;
+            var colors = new Color[count];
+
+            if (count <= 0)
+            {
+                return colors;
+            }
+
+            if (hoverScorePreviewFrozen && frozenHoverScoreColors.Count == count)
+            {
+                return frozenHoverScoreColors.ToArray();
+            }
+
+            for (int i = 0; i < count; i++)
+            {
+                colors[i] = GetScoreColorForCell(path[i]);
+            }
+
+            return colors;
+        }
+
+        private Color GetScoreColorForCell(Vector2Int cell)
+        {
+            if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual == null || visual.helper == null)
+            {
+                return Color.white;
+            }
+
+            switch (visual.helper.CurrentTileType)
+            {
+                case TILE.TileInspectorType.Marine:
+                    return new Color(0.35f, 0.72f, 1f, 1f);
+                case TILE.TileInspectorType.Ecosystem:
+                    return new Color(0.45f, 0.9f, 0.45f, 1f);
+                case TILE.TileInspectorType.Sanitation:
+                    return new Color(1f, 0.95f, 0.25f, 1f);
+                default:
+                    return Color.white;
+            }
+        }
+
+        private void FreezeHoverScorePreview(IReadOnlyList<Vector2Int> path)
+        {
+            frozenHoverScorePreview.Clear();
+            frozenHoverScoreColors.Clear();
+
+            int[] preview = ComputeHoverScorePreview(path);
+
+            for (int i = 0; i < preview.Length; i++)
+            {
+                frozenHoverScorePreview.Add(preview[i]);
+                frozenHoverScoreColors.Add(path != null && i < path.Count ? GetScoreColorForCell(path[i]) : Color.white);
+            }
+
+            hoverScorePreviewFrozen = true;
+        }
+
+        private void ConsumeFrozenHoverScoreStep()
+        {
+            if (!hoverScorePreviewFrozen || frozenHoverScorePreview.Count == 0)
+            {
+                return;
+            }
+
+            frozenHoverScorePreview.RemoveAt(0);
+
+            if (frozenHoverScoreColors.Count > 0)
+            {
+                frozenHoverScoreColors.RemoveAt(0);
+            }
+
+            if (frozenHoverScorePreview.Count == 0)
+            {
+                hoverScorePreviewFrozen = false;
+                frozenHoverScoreColors.Clear();
             }
         }
 

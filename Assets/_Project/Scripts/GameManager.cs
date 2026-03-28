@@ -251,8 +251,7 @@ namespace projectsplippy
 
             int existingSteps = authoredGameplayPath.Count - 1;
             int rangeRemaining = Mathf.Max(0, Mathf.Max(1, maxGameplayPathRange) - existingSteps);
-            int waterRemainingSteps = GetMaxAffordableAdditionalSteps(existingSteps);
-            int stepBudget = Mathf.Min(rangeRemaining, waterRemainingSteps);
+            int stepBudget = rangeRemaining;
 
             if (stepBudget <= 0)
             {
@@ -386,7 +385,7 @@ namespace projectsplippy
             isMoving = true;
 
             // Keep preview visible and consume it step-by-step while moving.
-            boardView.ShowHoverPathPreviewImmediate(path);
+            boardView.ShowHoverPathPreviewImmediateFrozen(path);
             MoveAlongPath(path, 1, path.Count - 1);
             return true;
         }
@@ -464,13 +463,25 @@ namespace projectsplippy
                     Vector2Int cell = ringCells[i];
                     TileType type = tileBoardSystem.GetTileType(cell);
                     int farmlandVariantIndex = -1;
+                    int sanitationTurns = -1;
 
-                    if (type == TileType.Farmland && tileBoardSystem.TryGetTile(cell, out TileData tile))
+                    if (tileBoardSystem.TryGetTile(cell, out TileData tile))
                     {
-                        farmlandVariantIndex = tile.CropVariantIndex;
+                        if (type == TileType.Farmland)
+                        {
+                            farmlandVariantIndex = tile.CropVariantIndex;
+                        }
+                        else if (type == TileType.Sanitation)
+                        {
+                            sanitationTurns = tile.SanitationTimer;
+                        }
                     }
 
-                    boardView.PlayTileReplacementFlip(cell, type, forcedFarmlandCropVariantIndex: farmlandVariantIndex);
+                    boardView.PlayTileReplacementFlip(
+                        cell,
+                        type,
+                        forcedFarmlandCropVariantIndex: farmlandVariantIndex,
+                        forcedSanitationTurns: sanitationTurns);
                 }
 
                 if (dist < maxDistance)
@@ -593,7 +604,7 @@ namespace projectsplippy
 
             deferredPathStepResults.Clear();
             isMoving = true;
-            boardView.ShowHoverPathPreviewImmediate(path);
+            boardView.ShowHoverPathPreviewImmediateFrozen(path);
             MoveAlongPath(path, 1, path.Count - 1);
         }
 
@@ -765,6 +776,8 @@ namespace projectsplippy
                 rules.sanitationTimeoutTurns = fallback.sanitationTimeoutTurns;
             }
 
+            rules.sanitationTimeoutTurns = Mathf.Max(2, rules.sanitationTimeoutTurns);
+
             int cropVariantCount = boardView != null ? boardView.AvailableCropSpriteCount : fallback.farmlandCropVariantCount;
             rules.farmlandCropVariantCount = Mathf.Max(1, cropVariantCount);
 
@@ -829,17 +842,26 @@ namespace projectsplippy
                 foreach (KeyValuePair<Vector2Int, TileType> replacement in traversedReplacements)
                 {
                     int farmlandVariantIndex = -1;
+                    int sanitationTurns = -1;
 
-                    if (replacement.Value == TileType.Farmland && tileBoardSystem.TryGetTile(replacement.Key, out TileData tile))
+                    if (tileBoardSystem.TryGetTile(replacement.Key, out TileData tile))
                     {
-                        farmlandVariantIndex = tile.CropVariantIndex;
+                        if (replacement.Value == TileType.Farmland)
+                        {
+                            farmlandVariantIndex = tile.CropVariantIndex;
+                        }
+                        else if (replacement.Value == TileType.Sanitation)
+                        {
+                            sanitationTurns = tile.SanitationTimer;
+                        }
                     }
 
                     boardView.PlayTileReplacementFlip(
                         replacement.Key,
                         replacement.Value,
                         pulseAfterReplace: true,
-                        forcedFarmlandCropVariantIndex: farmlandVariantIndex);
+                        forcedFarmlandCropVariantIndex: farmlandVariantIndex,
+                        forcedSanitationTurns: sanitationTurns);
                 }
             }
 

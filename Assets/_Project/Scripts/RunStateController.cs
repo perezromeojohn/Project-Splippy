@@ -45,13 +45,20 @@ namespace projectsplippy
         public bool CanAffordPath(int tileSteps)
         {
             int steps = Mathf.Max(0, tileSteps);
-            int totalCost = clickCost + (steps * pathTileCost);
+            int totalCost = steps * pathTileCost;
             return CurrentWaterReserve >= totalCost;
         }
 
         public bool ApplyPathClickCost()
         {
-            return ApplyEconomyAndScore(-clickCost, 0);
+            if (IsGameOver)
+            {
+                return true;
+            }
+
+            CurrentWaterReserve = Mathf.Clamp(CurrentWaterReserve - clickCost, 0, maxDroplets);
+            RefreshHud();
+            return false;
         }
 
         public bool ApplyPathResolution(IReadOnlyList<TileStepResult> stepResults, IReadOnlyList<string> collisionOrder = null)

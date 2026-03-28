@@ -22,7 +22,7 @@ namespace projectsplippy
 
         public static TileRules Default => new TileRules
         {
-            sanitationTimeoutTurns = 4,
+            sanitationTimeoutTurns = 2,
             farmlandCropVariantCount = 3
         };
     }
