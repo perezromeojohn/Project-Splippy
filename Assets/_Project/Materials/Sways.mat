@@ -29,15 +29,15 @@ Material:
         m_Offset: {x: 0, y: 0}
     m_Ints: []
     m_Floats:
-    - _ColorWobbleAmount: 0.181
+    - _ColorWobbleAmount: 0
     - _ColorWobbleScale: 2.47
     - _ColorWobbleSpeed: 5.42
-    - _Cutoff: 0.325
-    - _InteractorFalloff: 2.84
-    - _InteractorStrength: 0.3
-    - _WindAmplitude: 0.129
-    - _WindFrequency: 6.17
-    - _WindSpeed: 3
+    - _Cutoff: 1
+    - _InteractorFalloff: 0.73
+    - _InteractorStrength: 0.197
+    - _WindAmplitude: 0.175
+    - _WindFrequency: 0.35
+    - _WindSpeed: 2.8
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
