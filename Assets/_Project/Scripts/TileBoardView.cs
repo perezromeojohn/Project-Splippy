@@ -66,6 +66,9 @@ namespace projectsplippy
         [SerializeField] private float spreadPulseDuration = 0.12f;
         [SerializeField] private Ease materializeRiseEase = Ease.OutCubic;
 
+        [Header("Audio")]
+        [SerializeField] private AudioSource tileSwapAudioSource;
+
         [Header("Farmland Sprites")]
         [SerializeField] private Material farmlandBillboardMaterial;
         [SerializeField] private List<FarmlandCropSpriteEntry> farmlandCropSpriteEntries = new List<FarmlandCropSpriteEntry>();
@@ -180,6 +183,7 @@ namespace projectsplippy
         {
             EnsureFarmlandEntryDefaults();
             EnsureScoreGradientDefaults();
+            TryAutoAssignTileSwapAudioSource();
         }
 
         private void EnsureFarmlandEntryDefaults()
@@ -835,6 +839,8 @@ namespace projectsplippy
                 tileVisuals[cell] = CreateVisual(cell, TileType.Filler);
                 visual = tileVisuals[cell];
             }
+
+            PlayTileSwapSfx();
 
             if (visual.rotateTween.isAlive)
             {
@@ -1841,6 +1847,97 @@ namespace projectsplippy
             }
 
             return GameObject.CreatePrimitive(PrimitiveType.Cube);
+        }
+
+        private void PlayTileSwapSfx()
+        {
+            TryAutoAssignTileSwapAudioSource();
+            PlayAudioSourceClip(tileSwapAudioSource);
+        }
+
+        private void TryAutoAssignTileSwapAudioSource()
+        {
+            if (tileSwapAudioSource != null)
+            {
+                return;
+            }
+
+            tileSwapAudioSource = FindSceneAudioSourceByNames(new[] { "Tileswap", "TileSwap" });
+        }
+
+        private static void PlayAudioSourceClip(AudioSource source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            if (source.clip != null)
+            {
+                source.PlayOneShot(source.clip);
+                return;
+            }
+
+            source.Play();
+        }
+
+        private static AudioSource FindSceneAudioSourceByNames(IReadOnlyList<string> names)
+        {
+            AudioSource[] audioSources = Resources.FindObjectsOfTypeAll<AudioSource>();
+            AudioSource fallback = null;
+
+            for (int i = 0; i < audioSources.Length; i++)
+            {
+                AudioSource candidate = audioSources[i];
+
+                if (candidate == null || !candidate.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                if (!IsNameMatch(candidate.gameObject.name, names))
+                {
+                    continue;
+                }
+
+                if (candidate.gameObject.activeInHierarchy)
+                {
+                    return candidate;
+                }
+
+                fallback = candidate;
+            }
+
+            return fallback;
+        }
+
+        private static bool IsNameMatch(string objectName, IReadOnlyList<string> expectedNames)
+        {
+            string normalizedObjectName = NormalizeObjectName(objectName);
+
+            for (int i = 0; i < expectedNames.Count; i++)
+            {
+                if (normalizedObjectName == NormalizeObjectName(expectedNames[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeObjectName(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .ToLowerInvariant();
         }
 
         private Vector3 CellToWorld(Vector2Int cell)

@@ -10,10 +10,18 @@ namespace projectsplippy
         [SerializeField] private float marinePauseDuration = 0.14f;
         [SerializeField] private float marineRippleStepDelay = 0.045f;
 
+        [Header("Audio")]
+        [SerializeField] private AudioSource infectionAudioSource;
+
         [Header("Floating Event Text")]
         [SerializeField] private Color torrentTextColor = new Color(0.25f, 0.86f, 1f, 1f);
         [SerializeField] private Color marineTextColor = new Color(0.35f, 0.72f, 1f, 1f);
         [SerializeField] private float torrentTextWorldYOffset = 0.85f;
+
+        private void Awake()
+        {
+            TryAutoAssignInfectionAudioSource();
+        }
 
         public IEnumerator ResolvePath(
             TileBoardSystem tileBoardSystem,
@@ -92,6 +100,7 @@ namespace projectsplippy
                             TileType.WorstSanitation,
                             pulseAfterReplace: true,
                             forcedSanitationTurns: 1);
+                        PlayInfectionSfx();
                     }
                 }
             }
@@ -309,6 +318,97 @@ namespace projectsplippy
             }
 
             return labels;
+        }
+
+        private void PlayInfectionSfx()
+        {
+            TryAutoAssignInfectionAudioSource();
+            PlayAudioSourceClip(infectionAudioSource);
+        }
+
+        private void TryAutoAssignInfectionAudioSource()
+        {
+            if (infectionAudioSource != null)
+            {
+                return;
+            }
+
+            infectionAudioSource = FindSceneAudioSourceByNames(new[] { "InfectionSound", "Infection" });
+        }
+
+        private static void PlayAudioSourceClip(AudioSource source)
+        {
+            if (source == null)
+            {
+                return;
+            }
+
+            if (source.clip != null)
+            {
+                source.PlayOneShot(source.clip);
+                return;
+            }
+
+            source.Play();
+        }
+
+        private static AudioSource FindSceneAudioSourceByNames(IReadOnlyList<string> names)
+        {
+            AudioSource[] audioSources = Resources.FindObjectsOfTypeAll<AudioSource>();
+            AudioSource fallback = null;
+
+            for (int i = 0; i < audioSources.Length; i++)
+            {
+                AudioSource candidate = audioSources[i];
+
+                if (candidate == null || !candidate.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                if (!IsNameMatch(candidate.gameObject.name, names))
+                {
+                    continue;
+                }
+
+                if (candidate.gameObject.activeInHierarchy)
+                {
+                    return candidate;
+                }
+
+                fallback = candidate;
+            }
+
+            return fallback;
+        }
+
+        private static bool IsNameMatch(string objectName, IReadOnlyList<string> expectedNames)
+        {
+            string normalizedObjectName = NormalizeObjectName(objectName);
+
+            for (int i = 0; i < expectedNames.Count; i++)
+            {
+                if (normalizedObjectName == NormalizeObjectName(expectedNames[i]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeObjectName(string value)
+        {
+            if (string.IsNullOrEmpty(value))
+            {
+                return string.Empty;
+            }
+
+            return value
+                .Replace(" ", string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .ToLowerInvariant();
         }
     }
 }
