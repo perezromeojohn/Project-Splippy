@@ -41,11 +41,11 @@ Material:
     - _OutlineOpacity: 1
     - _OutlineWidth: 0.115
     - _RadialBlend: 1
-    - _RadialExtrude: 1
+    - _RadialExtrude: 0.601
     - _Seed: 5
     - _SmokeWobble: 0.02
     - _Softness: 8
-    - _SoftnessPower: 2.4
+    - _SoftnessPower: 0.5
     - _TopNormalThreshold: 0.642
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}

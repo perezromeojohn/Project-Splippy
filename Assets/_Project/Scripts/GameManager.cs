@@ -20,6 +20,9 @@ namespace projectsplippy
         [SerializeField] private TileBoardView boardView;
         [SerializeField] private RunStateController runState;
         [SerializeField] private PreGameFlowController preGameFlow;
+        [SerializeField] private GameplayPressureController gameplayPressureController;
+        [SerializeField] private SanitationSpawnController sanitationSpawnController;
+        [SerializeField] private PathResolutionController pathResolutionController;
 
         [Header("Grid")]
         [SerializeField] private int gridSize = 7;
@@ -33,10 +36,11 @@ namespace projectsplippy
         [SerializeField] private string moveTowardsActionName = "MoveTowards";
 
         [Header("Path Authoring")]
-        [SerializeField, Min(1)] private int maxGameplayPathRange = 8;
+        [SerializeField, Min(1)] private int maxGameplayPathRange = 7;
 
         [Header("Tile Rules")]
         [SerializeField] private TileRules tileRules = default;
+        [SerializeField, Min(1)] private int sanitationTurnsToTrash = 2;
 
         [Header("Tile Frequency (%)")]
         [SerializeField, Range(0, 100)] private int farmlandPercent = 72;
@@ -114,11 +118,43 @@ namespace projectsplippy
                 preGameFlow = GetComponent<PreGameFlowController>();
             }
 
+            if (gameplayPressureController == null)
+            {
+                gameplayPressureController = GetComponent<GameplayPressureController>();
+            }
+
+            if (sanitationSpawnController == null)
+            {
+                sanitationSpawnController = GetComponent<SanitationSpawnController>();
+            }
+
+            if (pathResolutionController == null)
+            {
+                pathResolutionController = GetComponent<PathResolutionController>();
+            }
+
             if (boardView == null || runState == null)
             {
                 Debug.LogError("GameManager: Assign TileBoardView and RunStateController in inspector.");
                 enabled = false;
                 return;
+            }
+
+            if (pathResolutionController == null)
+            {
+                Debug.LogError("GameManager: Assign PathResolutionController in inspector.");
+                enabled = false;
+                return;
+            }
+
+            if (gameplayPressureController == null)
+            {
+                Debug.LogWarning("GameManager: GameplayPressureController is not assigned; low-move vignette/soft-lock evaluation is disabled.");
+            }
+
+            if (sanitationSpawnController == null)
+            {
+                Debug.LogWarning("GameManager: SanitationSpawnController is not assigned; spawn cadence tracking is disabled.");
             }
 
             if (splippy == null)
@@ -137,6 +173,7 @@ namespace projectsplippy
 
             tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildSpawnWeights());
             SetupInput();
+            gameplayPressureController?.Initialize();
 
             if (preGameFlow != null)
             {
@@ -158,6 +195,7 @@ namespace projectsplippy
             moveTowardsAction?.Disable();
             boardView?.ClearHoverPathPreview();
             StopSplippyIdleSquash(resetScale: false);
+            gameplayPressureController?.SetInactiveImmediate();
 
             if (splippyRotationTween.isAlive)
             {
@@ -168,6 +206,7 @@ namespace projectsplippy
         private void Update()
         {
             boardView.UpdateBillboardInteractor(splippy.position);
+            gameplayPressureController?.UpdateVignette(Time.deltaTime);
 
             bool movePressedThisFrame = moveTowardsAction != null && moveTowardsAction.WasPressedThisFrame();
 
@@ -276,7 +315,7 @@ namespace projectsplippy
             Vector2Int tail = authoredGameplayPath[authoredGameplayPath.Count - 1];
 
             int existingSteps = authoredGameplayPath.Count - 1;
-            int rangeRemaining = Mathf.Max(0, Mathf.Max(1, maxGameplayPathRange) - existingSteps);
+            int rangeRemaining = Mathf.Max(0, GetCurrentPathRangeLimit() - existingSteps);
             int stepBudget = rangeRemaining;
 
             if (stepBudget <= 0)
@@ -408,6 +447,7 @@ namespace projectsplippy
 
             var path = new List<Vector2Int>(authoredGameplayPath);
             deferredPathStepResults.Clear();
+            runState?.BeginPathChargePreview();
             StopSplippyIdleSquash(resetScale: true);
             isMoving = true;
 
@@ -571,6 +611,8 @@ namespace projectsplippy
             boardView.RefreshProgressVisuals(tileBoardSystem);
             ResetGameplayPath();
             suppressGameplayClick = false;
+            sanitationSpawnController?.ResetTracker(runState);
+            gameplayPressureController?.Evaluate(currentPhase, tileBoardSystem, runState, currentCell, gridSize);
             StartSplippyIdleSquashIfReady();
         }
 
@@ -584,6 +626,8 @@ namespace projectsplippy
             currentPhase = GamePhase.Gameplay;
             ResetGameplayPath();
             suppressGameplayClick = false;
+            sanitationSpawnController?.ResetTracker(runState);
+            gameplayPressureController?.Evaluate(currentPhase, tileBoardSystem, runState, currentCell, gridSize);
             StartSplippyIdleSquashIfReady();
         }
 
@@ -690,9 +734,8 @@ namespace projectsplippy
             {
                 if (currentPhase == GamePhase.Gameplay)
                 {
-                    ResolvePostMoveEvents();
-                    ResetGameplayPath();
-                    boardView.ClearHoverPathPreview();
+                    StartCoroutine(FinalizeGameplayMoveRoutine());
+                    return;
                 }
 
                 suppressGameplayClick = false;
@@ -753,13 +796,41 @@ namespace projectsplippy
 
                             if (tileBoardSystem != null)
                             {
-                                TileStepResult stepResult = tileBoardSystem.ProcessStep(nextCell);
+                                bool marineInterrupt = tileBoardSystem.GetTileType(nextCell) == TileType.Marine;
+                                bool advanceTurnDecay = index == finalIndex || marineInterrupt;
+                                IReadOnlyList<Vector2Int> touchedCellsThisTurn = null;
+
+                                if (advanceTurnDecay)
+                                {
+                                    touchedCellsThisTurn = path.GetRange(1, index);
+                                }
+
+                                TileStepResult stepResult = tileBoardSystem.ProcessStep(nextCell, advanceTurnDecay, touchedCellsThisTurn);
                                 deferredPathStepResults.Add(stepResult);
+                                runState?.PreviewPathStepCharge(stepResult);
                                 boardView.PlayTileLandingFeedback(nextCell);
+                                runState?.PlayHopSliderFeedback();
+
+                                if (marineInterrupt)
+                                {
+                                    Tween.Scale(splippy, splippyBaseScale, landingSettleDuration, landingSettleEase);
+
+                                    if (index < finalIndex)
+                                    {
+                                        StartCoroutine(ResolveMarineInterruptAndContinueRoutine(path, index + 1, finalIndex));
+                                    }
+                                    else
+                                    {
+                                        StartCoroutine(FinalizeGameplayMoveRoutine());
+                                    }
+
+                                    return;
+                                }
                             }
 
                             if (runState != null && runState.IsGameOver)
                             {
+                                runState.EndPathChargePreview();
                                 isMoving = false;
                                 StartSplippyIdleSquashIfReady();
                                 return;
@@ -771,14 +842,73 @@ namespace projectsplippy
                 });
         }
 
-        private void ResolvePostMoveEvents()
+        private IEnumerator FinalizeGameplayMoveRoutine()
+        {
+            yield return StartCoroutine(ResolvePostMoveEventsRoutine(applyEndOfTurnSystems: true));
+            CompleteGameplayMove();
+        }
+
+        private IEnumerator ResolveMarineInterruptAndContinueRoutine(List<Vector2Int> path, int nextIndex, int finalIndex)
+        {
+            yield return StartCoroutine(ResolvePostMoveEventsRoutine(applyEndOfTurnSystems: false));
+
+            if (runState != null && runState.IsGameOver)
+            {
+                CompleteGameplayMove();
+                yield break;
+            }
+
+            if (path == null || nextIndex >= path.Count)
+            {
+                StartCoroutine(FinalizeGameplayMoveRoutine());
+                yield break;
+            }
+
+            MoveAlongPath(path, nextIndex, finalIndex);
+        }
+
+        private void CompleteGameplayMove()
+        {
+            runState?.EndPathChargePreview();
+            ResetGameplayPath();
+            boardView.ClearHoverPathPreview();
+            suppressGameplayClick = false;
+            isMoving = false;
+            StartSplippyIdleSquashIfReady();
+        }
+
+        private IEnumerator ResolvePostMoveEventsRoutine(bool applyEndOfTurnSystems)
         {
             if (tileBoardSystem == null)
             {
-                return;
+                yield break;
             }
 
-            ResolveDeferredPathResults();
+            if (pathResolutionController != null)
+            {
+                yield return StartCoroutine(pathResolutionController.ResolvePath(
+                    tileBoardSystem,
+                    boardView,
+                    runState,
+                    deferredPathStepResults,
+                    currentCell,
+                    splippy != null ? splippy.position : CellToWorldForSplippy(currentCell)));
+            }
+            else
+            {
+                boardView.RefreshProgressVisuals(tileBoardSystem);
+                deferredPathStepResults.Clear();
+            }
+
+            if (
+                applyEndOfTurnSystems &&
+                currentPhase == GamePhase.Gameplay &&
+                runState != null &&
+                !runState.IsGameOver)
+            {
+                sanitationSpawnController?.HandleResolvedTurn(tileBoardSystem, boardView, runState, currentCell);
+                gameplayPressureController?.Evaluate(currentPhase, tileBoardSystem, runState, currentCell, gridSize);
+            }
         }
 
         private void UpdateRemainingMovementPreview(List<Vector2Int> fullPath, int landedIndex)
@@ -804,11 +934,11 @@ namespace projectsplippy
         {
             if (runState == null)
             {
-                return Mathf.Max(1, maxGameplayPathRange);
+                return GetCurrentPathRangeLimit();
             }
 
             int additional = 0;
-            int safetyCap = Mathf.Max(1, Mathf.Max(1, maxGameplayPathRange) - Mathf.Max(0, existingSteps));
+            int safetyCap = Mathf.Max(1, GetCurrentPathRangeLimit() - Mathf.Max(0, existingSteps));
 
             while (additional < safetyCap)
             {
@@ -832,7 +962,29 @@ namespace projectsplippy
                 return lobbyWalkableCells.Contains(cell);
             }
 
-            return IsInBounds(cell.x, cell.y) && tileBoardSystem != null && tileBoardSystem.IsWalkable(cell);
+            if (!IsInBounds(cell.x, cell.y) || tileBoardSystem == null)
+            {
+                return false;
+            }
+
+            if (tileBoardSystem.IsWalkable(cell))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        private int GetCurrentPathRangeLimit()
+        {
+            int baseRange = Mathf.Max(1, maxGameplayPathRange);
+
+            if (runState == null || !runState.IsTorrentActive)
+            {
+                return baseRange;
+            }
+
+            return Mathf.Max(baseRange, runState.TorrentPathRange);
         }
 
         private bool TryFindMovementPath(Vector2Int start, Vector2Int goal, out List<Vector2Int> path)
@@ -948,13 +1100,8 @@ namespace projectsplippy
         private TileRules ResolveTileRules(TileRules rules)
         {
             TileRules fallback = TileRules.Default;
-
-            if (rules.sanitationTimeoutTurns <= 0)
-            {
-                rules.sanitationTimeoutTurns = fallback.sanitationTimeoutTurns;
-            }
-
-            rules.sanitationTimeoutTurns = Mathf.Max(2, rules.sanitationTimeoutTurns);
+            sanitationTurnsToTrash = Mathf.Max(1, sanitationTurnsToTrash);
+            rules.sanitationTimeoutTurns = sanitationTurnsToTrash > 0 ? sanitationTurnsToTrash : fallback.sanitationTimeoutTurns;
 
             int cropVariantCount = boardView != null ? boardView.AvailableCropSpriteCount : fallback.farmlandCropVariantCount;
             rules.farmlandCropVariantCount = Mathf.Max(1, cropVariantCount);
@@ -985,92 +1132,6 @@ namespace projectsplippy
                 sanitationWeight = sanitationPercent * invTotal,
                 marineWeight = marinePercent * invTotal
             };
-        }
-
-        private void ResolveDeferredPathResults()
-        {
-            if (tileBoardSystem == null)
-            {
-                return;
-            }
-
-            if (deferredPathStepResults.Count > 0)
-            {
-                List<string> collisionOrder = BuildCollisionOrderDebug(deferredPathStepResults);
-                runState?.ApplyPathResolution(deferredPathStepResults, collisionOrder);
-                var traversedCells = new List<Vector2Int>(deferredPathStepResults.Count);
-
-                for (int i = 0; i < deferredPathStepResults.Count; i++)
-                {
-                    TileStepResult step = deferredPathStepResults[i];
-                    traversedCells.Add(step.Cell);
-
-                    if (step.LandingResult != null)
-                    {
-                        for (int e = 0; e < step.LandingResult.ExpiredToTrashCells.Count; e++)
-                        {
-                            Vector2Int expiredCell = step.LandingResult.ExpiredToTrashCells[e];
-                            boardView.PlayTileReplacementFlip(expiredCell, TileType.Trash, pulseAfterReplace: true);
-                        }
-                    }
-                }
-
-                Dictionary<Vector2Int, TileType> traversedReplacements = tileBoardSystem.ReplaceTraversedTiles(traversedCells, currentCell);
-
-                foreach (KeyValuePair<Vector2Int, TileType> replacement in traversedReplacements)
-                {
-                    int farmlandVariantIndex = -1;
-                    int sanitationTurns = -1;
-
-                    if (tileBoardSystem.TryGetTile(replacement.Key, out TileData tile))
-                    {
-                        if (replacement.Value == TileType.Farmland)
-                        {
-                            farmlandVariantIndex = tile.CropVariantIndex;
-                        }
-                        else if (replacement.Value == TileType.Sanitation)
-                        {
-                            sanitationTurns = tile.SanitationTimer;
-                        }
-                    }
-
-                    boardView.PlayTileReplacementFlip(
-                        replacement.Key,
-                        replacement.Value,
-                        pulseAfterReplace: true,
-                        forcedFarmlandCropVariantIndex: farmlandVariantIndex,
-                        forcedSanitationTurns: sanitationTurns);
-                }
-            }
-
-            boardView.RefreshProgressVisuals(tileBoardSystem);
-            deferredPathStepResults.Clear();
-        }
-
-        private List<string> BuildCollisionOrderDebug(IReadOnlyList<TileStepResult> steps)
-        {
-            var labels = new List<string>(steps != null ? steps.Count : 0);
-
-            if (steps == null)
-            {
-                return labels;
-            }
-
-            for (int i = 0; i < steps.Count; i++)
-            {
-                TileStepResult step = steps[i];
-
-                if (step.EnteredType == TileType.Farmland)
-                {
-                    labels.Add(boardView != null ? boardView.GetCropVariantLabel(step.EnteredCropVariantIndex) : $"Crop[{step.EnteredCropVariantIndex}]" );
-                }
-                else
-                {
-                    labels.Add(step.EnteredType.ToString());
-                }
-            }
-
-            return labels;
         }
 
         private void FaceSplippyTowards(Vector3 worldDirection)

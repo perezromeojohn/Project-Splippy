@@ -173,25 +173,31 @@ namespace projectsplippy
             return tile.IsWalkable();
         }
 
-        public TileLandingResult ProcessLanding(Vector2Int landedCell)
+        public TileLandingResult ProcessLanding(
+            Vector2Int landedCell,
+            bool advanceTurnDecay = true,
+            IReadOnlyList<Vector2Int> touchedCellsThisTurn = null)
         {
             var result = new TileLandingResult
             {
                 LandedCell = landedCell
             };
 
-            AdvanceDecayAndTimers(landedCell, result);
-
-            for (int i = 0; i < result.ExpiredToTrashCells.Count; i++)
+            if (advanceTurnDecay)
             {
-                Vector2Int expiredCell = result.ExpiredToTrashCells[i];
+                AdvanceDecayAndTimers(landedCell, result, touchedCellsThisTurn);
 
-                if (expiredCell == landedCell)
+                for (int i = 0; i < result.ExpiredToTrashCells.Count; i++)
                 {
-                    continue;
-                }
+                    Vector2Int expiredCell = result.ExpiredToTrashCells[i];
 
-                SetTileType(expiredCell, TileType.Trash);
+                    if (expiredCell == landedCell)
+                    {
+                        continue;
+                    }
+
+                    SetTileType(expiredCell, TileType.Trash);
+                }
             }
 
             if (!tiles.TryGetValue(landedCell, out TileData landed))
@@ -206,15 +212,26 @@ namespace projectsplippy
             return result;
         }
 
-        private void AdvanceDecayAndTimers(Vector2Int landedCell, TileLandingResult result)
+        private void AdvanceDecayAndTimers(
+            Vector2Int landedCell,
+            TileLandingResult result,
+            IReadOnlyList<Vector2Int> touchedCellsThisTurn)
         {
             var keys = new List<Vector2Int>(tiles.Keys);
+            HashSet<Vector2Int> touchedThisTurn = null;
+
+            if (touchedCellsThisTurn != null && touchedCellsThisTurn.Count > 0)
+            {
+                touchedThisTurn = new HashSet<Vector2Int>(touchedCellsThisTurn);
+            }
+
+            touchedThisTurn?.Add(landedCell);
 
             for (int i = 0; i < keys.Count; i++)
             {
                 Vector2Int cell = keys[i];
 
-                if (cell == landedCell)
+                if (touchedThisTurn != null ? touchedThisTurn.Contains(cell) : cell == landedCell)
                 {
                     continue;
                 }

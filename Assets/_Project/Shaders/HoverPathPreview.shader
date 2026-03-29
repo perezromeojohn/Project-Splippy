@@ -23,6 +23,7 @@ Shader "ProjectSplippy/HoverPathPreview"
 
         Blend SrcAlpha OneMinusSrcAlpha
         ZWrite Off
+        Offset -1, -1
         Cull Off
 
         Pass

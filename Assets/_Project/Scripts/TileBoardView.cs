@@ -25,10 +25,12 @@ namespace projectsplippy
 
         private sealed class TileVisual
         {
+            public Vector2Int cell;
             public Transform transform;
             public readonly List<SpriteRenderer> farmlandPrefabSprites = new List<SpriteRenderer>();
             public TILE helper;
             public TextMeshPro sanitationTurnLabel;
+            public SpriteRenderer trashBlockedIcon;
             public int farmlandCropVariantIndex = -1;
             public bool isSwapping;
             public Vector3 baseScale;
@@ -77,7 +79,9 @@ namespace projectsplippy
         [SerializeField] private Material hoverPreviewMaterial;
         [SerializeField] private Color hoverPreviewColor = new Color(0.2f, 0.95f, 1f, 0.92f);
         [SerializeField] private Color hoverPreviewDestinationColor = new Color(1f, 0.95f, 0.35f, 0.95f);
-        [SerializeField] private float hoverPreviewYOffset = 0.03f;
+        [SerializeField] private bool hoverPreviewAnchorToTileSurface = true;
+        [SerializeField] private float hoverPreviewYOffset = 0.06f;
+        [SerializeField] private int hoverPreviewSortingOrder = 8;
         [SerializeField] private float hoverPreviewDestinationSize = 0.95f;
         [SerializeField, Range(0.1f, 1f)] private float hoverPreviewPreviousNodeScale = 0.5f;
         [SerializeField] private float hoverPreviewLinkWidth = 0.42f;
@@ -92,13 +96,31 @@ namespace projectsplippy
         [SerializeField] private float hoverPreviewConsumeDuration = 0.08f;
         [SerializeField] private TMP_FontAsset hoverScorePreviewFont;
         [SerializeField] private float hoverScorePreviewTextSize = 4f;
-        [SerializeField] private float hoverScorePreviewYOffset = 0.45f;
+        [SerializeField] private float hoverScorePreviewYOffset = 0.32f;
+        [SerializeField] private int hoverScorePreviewSortingOrder = 12;
         [SerializeField] private AudioSource hoverPreviewAudioSource;
 
         [Header("Sanitation Timer Label")]
         [SerializeField] private TMP_FontAsset sanitationTurnLabelFont;
-        [SerializeField] private float sanitationTurnLabelSize = 3.5f;
+        [SerializeField] private float sanitationTurnLabelSize = 4.4f;
         [SerializeField] private float sanitationTurnLabelYOffset = 0.42f;
+        [SerializeField] private Color sanitationTurnLabelColor = new Color32(0x7C, 0x8E, 0x02, 0xFF);
+
+        [Header("Trash Block Icon")]
+        [SerializeField] private Sprite trashBlockedIconSprite;
+        [SerializeField] private float trashBlockedIconSize = 0.55f;
+        [SerializeField] private float trashBlockedIconYOffset = 0.2f;
+        [SerializeField] private Color trashBlockedIconColor = Color.white;
+        [SerializeField] private int trashBlockedIconSortingOrder = 10;
+
+        [Header("Floating Event Text")]
+        [SerializeField] private TMP_FontAsset floatingEventFont;
+        [SerializeField] private float floatingEventTextSize = 4.8f;
+        [SerializeField] private float floatingEventTextYOffset = 1.35f;
+        [SerializeField] private float floatingEventTextRiseDistance = 0.35f;
+        [SerializeField] private float floatingEventTextDuration = 0.55f;
+        [SerializeField] private Ease floatingEventTextEase = Ease.OutCubic;
+        [SerializeField] private int floatingEventTextSortingOrder = 14;
 
         public float GroundTopYOffset => tileYOffset + groundTopYOffset;
 
@@ -260,8 +282,10 @@ namespace projectsplippy
                 Vector2Int cell = path[i];
                 bool isDestination = i == path.Count - 1;
                 float sizeFactor = isDestination ? hoverPreviewDestinationSize : (hoverPreviewDestinationSize * hoverPreviewPreviousNodeScale);
-                float markerY = GetCellTopY(cell) + hoverPreviewYOffset;
-                Vector3 markerPosition = new Vector3(CellToWorld(cell).x, markerY, CellToWorld(cell).z);
+                Vector3 cellWorld = CellToWorld(cell);
+                float surfaceY = hoverPreviewAnchorToTileSurface ? GetTileSurfaceY(cell) : GetCellAnchorY(cell);
+                float markerY = surfaceY + hoverPreviewYOffset;
+                Vector3 markerPosition = new Vector3(cellWorld.x, markerY, cellWorld.z);
                 Vector3 targetScale = Vector3.one * (cellSize * sizeFactor);
 
                 if (!marker.activeSelf)
@@ -286,7 +310,7 @@ namespace projectsplippy
 
                     if (showScore)
                     {
-                        Vector3 labelPosition = markerPosition + new Vector3(0f, hoverScorePreviewYOffset, 0f);
+                        Vector3 labelPosition = new Vector3(cellWorld.x, markerY + hoverScorePreviewYOffset, cellWorld.z);
 
                         if (!scoreLabel.gameObject.activeSelf)
                         {
@@ -590,11 +614,13 @@ namespace projectsplippy
                 {
                     UpdateFarmlandPrefabSprites(visual, null);
                     UpdateSanitationTurnLabel(visual, null);
+                    UpdateTrashBlockedIcon(visual, null);
                     continue;
                 }
 
                 UpdateFarmlandPrefabSprites(visual, tile);
                 UpdateSanitationTurnLabel(visual, tile);
+                UpdateTrashBlockedIcon(visual, tile);
             }
         }
 
@@ -620,6 +646,69 @@ namespace projectsplippy
         public void PlayTileLandingFeedback(Vector2Int cell)
         {
             PlayTileScaleFeedback(cell, tileLandingScaleMultiplier, tileLandingDuration);
+        }
+
+        public void PlayFloatingText(Vector2Int cell, string message, Color color)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            Vector3 cellWorld = CellToWorld(cell);
+            float y = GetCellAnchorY(cell) + floatingEventTextYOffset;
+            Vector3 start = new Vector3(cellWorld.x, y, cellWorld.z);
+            PlayFloatingTextAtWorld(start, message, color);
+        }
+
+        public void PlayFloatingTextAtWorld(Vector3 worldPosition, string message, Color color)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                return;
+            }
+
+            EnsureGroundParent();
+
+            GameObject labelObject = new GameObject("FloatingEventText");
+            labelObject.transform.SetParent(groundParent, true);
+            Vector3 end = worldPosition + new Vector3(0f, Mathf.Max(0f, floatingEventTextRiseDistance), 0f);
+
+            labelObject.transform.position = worldPosition;
+            labelObject.transform.rotation = Quaternion.Euler(60f, 0f, 0f);
+            labelObject.transform.localScale = Vector3.zero;
+
+            var text = labelObject.AddComponent<TextMeshPro>();
+            text.text = message;
+            text.color = color;
+            text.alignment = TextAlignmentOptions.Center;
+            text.horizontalAlignment = HorizontalAlignmentOptions.Center;
+            text.verticalAlignment = VerticalAlignmentOptions.Middle;
+            text.textWrappingMode = TextWrappingModes.NoWrap;
+            text.fontSize = floatingEventTextSize;
+
+            if (floatingEventFont != null)
+            {
+                text.font = floatingEventFont;
+            }
+
+            if (text.TryGetComponent<MeshRenderer>(out MeshRenderer floatingRenderer))
+            {
+                floatingRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                floatingRenderer.receiveShadows = false;
+                floatingRenderer.sortingOrder = floatingEventTextSortingOrder;
+            }
+
+            float duration = Mathf.Max(0.15f, floatingEventTextDuration);
+            Tween.Scale(labelObject.transform, Vector3.one, Mathf.Min(0.18f, duration * 0.35f), Ease.OutBack);
+            Tween.Position(labelObject.transform, end, duration, floatingEventTextEase);
+            Tween.Delay(duration, () =>
+            {
+                if (labelObject != null)
+                {
+                    Destroy(labelObject);
+                }
+            });
         }
 
         public void PlayTileReplacementFlip(
@@ -681,6 +770,8 @@ namespace projectsplippy
                         UpdateSanitationTurnLabel(replaced, null);
                     }
 
+                    UpdateTrashBlockedIconForType(replaced, newType);
+
                     replaced.isSwapping = true;
 
                     replaced.transform.localEulerAngles = foldOutStart;
@@ -731,9 +822,11 @@ namespace projectsplippy
 
             var visual = new TileVisual
             {
+                cell = cell,
                 transform = tileObject.transform,
                 helper = EnsureTileHelper(tileObject, type),
                 sanitationTurnLabel = CreateSanitationTurnLabel(tileObject.transform),
+                trashBlockedIcon = CreateTrashBlockedIcon(tileObject.transform),
                 baseScale = tileObject.transform.localScale,
                 baseRotation = tileObject.transform.localEulerAngles
             };
@@ -952,7 +1045,7 @@ namespace projectsplippy
             label.horizontalAlignment = HorizontalAlignmentOptions.Center;
             label.verticalAlignment = VerticalAlignmentOptions.Middle;
             label.textWrappingMode = TextWrappingModes.NoWrap;
-            label.color = Color.white;
+            label.color = sanitationTurnLabelColor;
             label.fontSize = sanitationTurnLabelSize;
             label.text = string.Empty;
 
@@ -963,6 +1056,28 @@ namespace projectsplippy
 
             labelObject.SetActive(false);
             return label;
+        }
+
+        private SpriteRenderer CreateTrashBlockedIcon(Transform parent)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            GameObject iconObject = new GameObject("TrashBlockedIcon");
+            iconObject.transform.SetParent(parent, false);
+            iconObject.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+            var icon = iconObject.AddComponent<SpriteRenderer>();
+            icon.sprite = trashBlockedIconSprite;
+            icon.color = trashBlockedIconColor;
+            icon.shadowCastingMode = ShadowCastingMode.Off;
+            icon.receiveShadows = false;
+            icon.sortingOrder = trashBlockedIconSortingOrder;
+
+            iconObject.SetActive(false);
+            return icon;
         }
 
         private void UpdateSanitationTurnLabel(TileVisual visual, TileData tile)
@@ -994,7 +1109,7 @@ namespace projectsplippy
             int clampedTurns = Mathf.Max(0, turns);
             string unit = clampedTurns == 1 ? "turn" : "turns";
             visual.sanitationTurnLabel.text = $"({clampedTurns} {unit})";
-            visual.sanitationTurnLabel.color = Color.white;
+            visual.sanitationTurnLabel.color = sanitationTurnLabelColor;
             visual.sanitationTurnLabel.fontSize = sanitationTurnLabelSize;
 
             if (sanitationTurnLabelFont != null)
@@ -1002,10 +1117,43 @@ namespace projectsplippy
                 visual.sanitationTurnLabel.font = sanitationTurnLabelFont;
             }
 
-            Vector3 pos = visual.transform.position;
-            pos.y = GetVisualTopY(visual) + sanitationTurnLabelYOffset;
+            Vector3 cellWorld = CellToWorld(visual.cell);
+            Vector3 pos = new Vector3(cellWorld.x, GetCellAnchorY(visual.cell) + sanitationTurnLabelYOffset, cellWorld.z);
             visual.sanitationTurnLabel.transform.position = pos;
             visual.sanitationTurnLabel.gameObject.SetActive(true);
+        }
+
+        private void UpdateTrashBlockedIcon(TileVisual visual, TileData tile)
+        {
+            UpdateTrashBlockedIconForType(visual, tile != null ? tile.Type : TileType.Filler);
+        }
+
+        private void UpdateTrashBlockedIconForType(TileVisual visual, TileType type)
+        {
+            if (visual == null || visual.trashBlockedIcon == null)
+            {
+                return;
+            }
+
+            bool show = type == TileType.Trash && trashBlockedIconSprite != null;
+
+            if (!show)
+            {
+                visual.trashBlockedIcon.gameObject.SetActive(false);
+                return;
+            }
+
+            visual.trashBlockedIcon.sprite = trashBlockedIconSprite;
+            visual.trashBlockedIcon.color = trashBlockedIconColor;
+            visual.trashBlockedIcon.sortingOrder = trashBlockedIconSortingOrder;
+
+            float size = Mathf.Max(0.01f, trashBlockedIconSize);
+            visual.trashBlockedIcon.transform.localScale = new Vector3(size, size, 1f);
+
+            Vector3 cellWorld = CellToWorld(visual.cell);
+            float y = GetCellAnchorY(visual.cell) + trashBlockedIconYOffset;
+            visual.trashBlockedIcon.transform.position = new Vector3(cellWorld.x, y, cellWorld.z);
+            visual.trashBlockedIcon.gameObject.SetActive(true);
         }
 
 
@@ -1132,6 +1280,13 @@ namespace projectsplippy
             if (hoverScorePreviewFont != null)
             {
                 text.font = hoverScorePreviewFont;
+            }
+
+            if (text.TryGetComponent<MeshRenderer>(out MeshRenderer labelRenderer))
+            {
+                labelRenderer.shadowCastingMode = ShadowCastingMode.Off;
+                labelRenderer.receiveShadows = false;
+                labelRenderer.sortingOrder = hoverScorePreviewSortingOrder;
             }
 
             labelObject.SetActive(false);
@@ -1316,6 +1471,7 @@ namespace projectsplippy
                 renderer.sharedMaterial = ResolveHoverPreviewMaterial();
                 renderer.shadowCastingMode = ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
+                renderer.sortingOrder = hoverPreviewSortingOrder;
             }
 
             marker.SetActive(false);
@@ -1356,71 +1512,26 @@ namespace projectsplippy
             return hoverMarkerPropertyBlock;
         }
 
-        private float GetCellTopY(Vector2Int cell)
+        private float GetCellAnchorY(Vector2Int cell)
         {
-            if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual.transform == null)
-            {
-                return CellToWorld(cell).y + GroundTopYOffset;
-            }
-
-            Renderer[] renderers = visual.transform.GetComponentsInChildren<Renderer>();
-
-            if (renderers == null || renderers.Length == 0)
-            {
-                return CellToWorld(cell).y + GroundTopYOffset;
-            }
-
-            float maxY = float.MinValue;
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                Renderer r = renderers[i];
-
-                if (r == null)
-                {
-                    continue;
-                }
-
-                maxY = Mathf.Max(maxY, r.bounds.max.y);
-            }
-
-            if (maxY == float.MinValue)
-            {
-                return CellToWorld(cell).y + GroundTopYOffset;
-            }
-
-            return maxY;
+            return CellToWorld(cell).y + GroundTopYOffset;
         }
 
-        private float GetVisualTopY(TileVisual visual)
+        private float GetTileSurfaceY(Vector2Int cell)
         {
-            if (visual == null || visual.transform == null)
+            float fallback = GetCellAnchorY(cell);
+
+            if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual == null || visual.transform == null)
             {
-                return 0f;
+                return fallback;
             }
 
-            Renderer[] renderers = visual.transform.GetComponentsInChildren<Renderer>();
-
-            if (renderers == null || renderers.Length == 0)
+            if (!visual.transform.TryGetComponent<Renderer>(out Renderer rootRenderer) || rootRenderer == null)
             {
-                return visual.transform.position.y;
+                return fallback;
             }
 
-            float maxY = float.MinValue;
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                Renderer r = renderers[i];
-
-                if (r == null)
-                {
-                    continue;
-                }
-
-                maxY = Mathf.Max(maxY, r.bounds.max.y);
-            }
-
-            return maxY == float.MinValue ? visual.transform.position.y : maxY;
+            return Mathf.Max(fallback, rootRenderer.bounds.max.y);
         }
 
         private void CachePrefabs()

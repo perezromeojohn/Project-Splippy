@@ -93,7 +93,10 @@ namespace projectsplippy
             return model.TryGetTile(cell, out tile);
         }
 
-        public TileStepResult ProcessStep(Vector2Int cell)
+        public TileStepResult ProcessStep(
+            Vector2Int cell,
+            bool advanceTurnDecay = true,
+            IReadOnlyList<Vector2Int> touchedCellsThisTurn = null)
         {
             TileType enteredType = model.GetTileType(cell);
             int enteredCropVariantIndex = -1;
@@ -103,7 +106,7 @@ namespace projectsplippy
                 enteredCropVariantIndex = enteredTile.CropVariantIndex;
             }
 
-            TileLandingResult landingResult = model.ProcessLanding(cell);
+            TileLandingResult landingResult = model.ProcessLanding(cell, advanceTurnDecay, touchedCellsThisTurn);
 
             return new TileStepResult
             {
@@ -114,7 +117,10 @@ namespace projectsplippy
             };
         }
 
-        public Dictionary<Vector2Int, TileType> ReplaceTraversedTiles(IReadOnlyList<Vector2Int> traversedCells, Vector2Int protectedCell)
+        public Dictionary<Vector2Int, TileType> ReplaceTraversedTiles(
+            IReadOnlyList<Vector2Int> traversedCells,
+            Vector2Int protectedCell,
+            ISet<Vector2Int> forceFarmlandCells = null)
         {
             var replaced = new Dictionary<Vector2Int, TileType>();
 
@@ -134,12 +140,108 @@ namespace projectsplippy
                     continue;
                 }
 
-                TileType newType = cell == protectedCell ? RollWalkableTileType() : RollWeightedTileType();
+                bool forceFarmland = forceFarmlandCells != null && forceFarmlandCells.Contains(cell);
+                TileType newType = forceFarmland
+                    ? TileType.Farmland
+                    : (cell == protectedCell ? RollWalkableTileType() : RollWeightedTileType());
                 model.SetTileType(cell, newType);
                 replaced[cell] = newType;
             }
 
             return replaced;
+        }
+
+        public Dictionary<Vector2Int, TileType> ClearHazardsInCross(Vector2Int center)
+        {
+            return ResolveMarineCross(center, flipNonHazardsToFarmland: false);
+        }
+
+        public Dictionary<Vector2Int, TileType> ResolveMarineCross(Vector2Int center, bool flipNonHazardsToFarmland = true)
+        {
+            var replaced = new Dictionary<Vector2Int, TileType>();
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                TryResolveMarineCrossCell(new Vector2Int(x, center.y), replaced, flipNonHazardsToFarmland);
+            }
+
+            for (int y = 0; y < gridSize; y++)
+            {
+                TryResolveMarineCrossCell(new Vector2Int(center.x, y), replaced, flipNonHazardsToFarmland);
+            }
+
+            return replaced;
+        }
+
+        public Dictionary<Vector2Int, TileType> SpawnSanitationTiles(int amount, Vector2Int protectedCell)
+        {
+            var replaced = new Dictionary<Vector2Int, TileType>();
+            int target = Mathf.Max(0, amount);
+
+            if (target <= 0)
+            {
+                return replaced;
+            }
+
+            var candidates = new List<Vector2Int>();
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    Vector2Int cell = new Vector2Int(x, y);
+
+                    if (cell == protectedCell)
+                    {
+                        continue;
+                    }
+
+                    TileType type = model.GetTileType(cell);
+
+                    if (type == TileType.Rock || type == TileType.Trash || type == TileType.Sanitation)
+                    {
+                        continue;
+                    }
+
+                    candidates.Add(cell);
+                }
+            }
+
+            int spawnCount = Mathf.Min(target, candidates.Count);
+
+            for (int i = 0; i < spawnCount; i++)
+            {
+                int randomIndex = random.Next(candidates.Count);
+                Vector2Int cell = candidates[randomIndex];
+                candidates.RemoveAt(randomIndex);
+
+                model.SetTileType(cell, TileType.Sanitation);
+                replaced[cell] = TileType.Sanitation;
+            }
+
+            return replaced;
+        }
+
+        private void TryResolveMarineCrossCell(
+            Vector2Int cell,
+            Dictionary<Vector2Int, TileType> replaced,
+            bool flipNonHazardsToFarmland)
+        {
+            TileType current = model.GetTileType(cell);
+            bool isHazard = current == TileType.Sanitation || current == TileType.Trash;
+
+            if (!isHazard && !flipNonHazardsToFarmland)
+            {
+                return;
+            }
+
+            if (current == TileType.Rock || current == TileType.Filler)
+            {
+                return;
+            }
+
+            model.SetTileType(cell, TileType.Farmland);
+            replaced[cell] = TileType.Farmland;
         }
 
         private TileType RollWalkableTileType()

@@ -45,7 +45,7 @@ Material:
     - _Seed: 5
     - _SmokeWobble: 0.02
     - _Softness: 8
-    - _SoftnessPower: 2.4
+    - _SoftnessPower: 0.5
     - _TopNormalThreshold: 0.642
     m_Colors:
     - _Color: {r: 0.27687788, g: 0.7505457, b: 0.9622642, a: 1}
