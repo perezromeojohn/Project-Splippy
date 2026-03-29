@@ -2154,7 +2154,7 @@ MonoBehaviour:
   lowMoveVignetteThreshold: 1
   lowMoveVignetteIntensity: 0.28
   vignetteBlendSpeed: 2.5
-  trashCorruptionGameOverThreshold: 0.7
+  trashCorruptionGameOverThreshold: 0.8
   enableTorrentBlueVignette: 1
   torrentVignetteColor: {r: 0.24, g: 0.52, b: 1, a: 1}
   torrentVignetteIntensity: 0.9
