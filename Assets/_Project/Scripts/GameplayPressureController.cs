@@ -12,9 +12,22 @@ namespace projectsplippy
         [SerializeField, Range(0f, 1f)] private float lowMoveVignetteIntensity = 0.28f;
         [SerializeField] private float vignetteBlendSpeed = 2.5f;
 
+        [Header("Torrent Vignette")]
+        [SerializeField] private bool enableTorrentBlueVignette = true;
+        [SerializeField] private Color torrentVignetteColor = new Color(0.24f, 0.52f, 1f, 1f);
+        [SerializeField, Range(0f, 1f)] private float torrentVignetteIntensity = 0.24f;
+
+        [Header("Torrent Particle Hook")]
+        [SerializeField] private ParticleSystem torrentParticleEmitter;
+        [SerializeField] private bool enableTorrentParticleEmitter = true;
+
         private Vignette gameplayVignette;
         private float baseVignetteIntensity;
         private float targetVignetteIntensity;
+        private Color baseVignetteColor = Color.black;
+        private Color targetVignetteColor = Color.black;
+        private bool lowMoveVignetteActive;
+        private bool torrentVisualActive;
 
         private static readonly Vector2Int[] CardinalDirections =
         {
@@ -31,7 +44,34 @@ namespace projectsplippy
 
         public void SetInactiveImmediate()
         {
-            SetLowMoveVignetteActive(false, immediate: true);
+            lowMoveVignetteActive = false;
+            torrentVisualActive = false;
+            RecomputeVignetteTargets();
+
+            if (gameplayVignette != null)
+            {
+                gameplayVignette.intensity.Override(targetVignetteIntensity);
+                gameplayVignette.color.Override(targetVignetteColor);
+            }
+
+            UpdateTorrentParticleState();
+        }
+
+        public void SyncRunStateVisuals(GameManager.GamePhase currentPhase, RunStateController runState)
+        {
+            bool shouldBeActive =
+                currentPhase == GameManager.GamePhase.Gameplay &&
+                runState != null &&
+                runState.IsTorrentActive;
+
+            if (torrentVisualActive == shouldBeActive)
+            {
+                return;
+            }
+
+            torrentVisualActive = shouldBeActive;
+            RecomputeVignetteTargets();
+            UpdateTorrentParticleState();
         }
 
         public void UpdateVignette(float deltaTime)
@@ -46,15 +86,19 @@ namespace projectsplippy
             if (blend <= 0f)
             {
                 gameplayVignette.intensity.Override(targetVignetteIntensity);
+                gameplayVignette.color.Override(targetVignetteColor);
                 return;
             }
 
+            float lerpT = 1f - Mathf.Exp(-blend * Mathf.Max(0f, deltaTime));
             float next = Mathf.MoveTowards(
                 gameplayVignette.intensity.value,
                 targetVignetteIntensity,
                 blend * Mathf.Max(0f, deltaTime));
+            Color nextColor = Color.Lerp(gameplayVignette.color.value, targetVignetteColor, lerpT);
 
             gameplayVignette.intensity.Override(next);
+            gameplayVignette.color.Override(nextColor);
         }
 
         public void Evaluate(
@@ -163,18 +207,63 @@ namespace projectsplippy
 
             gameplayVignette.active = true;
             baseVignetteIntensity = Mathf.Clamp01(gameplayVignette.intensity.value);
+            baseVignetteColor = gameplayVignette.color.value;
             targetVignetteIntensity = baseVignetteIntensity;
+            targetVignetteColor = baseVignetteColor;
+            gameplayVignette.color.Override(baseVignetteColor);
         }
 
         private void SetLowMoveVignetteActive(bool active, bool immediate = false)
         {
-            targetVignetteIntensity = active
-                ? Mathf.Clamp01(lowMoveVignetteIntensity)
-                : baseVignetteIntensity;
+            lowMoveVignetteActive = active;
+            RecomputeVignetteTargets();
 
             if (immediate && gameplayVignette != null)
             {
                 gameplayVignette.intensity.Override(targetVignetteIntensity);
+                gameplayVignette.color.Override(targetVignetteColor);
+            }
+        }
+
+        private void RecomputeVignetteTargets()
+        {
+            float lowMoveTarget = lowMoveVignetteActive
+                ? Mathf.Clamp01(lowMoveVignetteIntensity)
+                : baseVignetteIntensity;
+
+            if (enableTorrentBlueVignette && torrentVisualActive)
+            {
+                targetVignetteIntensity = Mathf.Max(lowMoveTarget, Mathf.Clamp01(torrentVignetteIntensity));
+                targetVignetteColor = torrentVignetteColor;
+            }
+            else
+            {
+                targetVignetteIntensity = lowMoveTarget;
+                targetVignetteColor = baseVignetteColor;
+            }
+        }
+
+        private void UpdateTorrentParticleState()
+        {
+            if (torrentParticleEmitter == null)
+            {
+                return;
+            }
+
+            var emission = torrentParticleEmitter.emission;
+            bool shouldEnable = enableTorrentParticleEmitter && torrentVisualActive;
+            emission.enabled = shouldEnable;
+
+            if (shouldEnable)
+            {
+                if (!torrentParticleEmitter.isPlaying)
+                {
+                    torrentParticleEmitter.Play();
+                }
+            }
+            else if (torrentParticleEmitter.isPlaying)
+            {
+                torrentParticleEmitter.Stop(true, ParticleSystemStopBehavior.StopEmitting);
             }
         }
     }

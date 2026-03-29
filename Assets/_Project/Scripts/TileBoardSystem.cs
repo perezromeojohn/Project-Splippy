@@ -10,6 +10,7 @@ namespace projectsplippy
         public float farmlandWeight;
         public float ecosystemWeight;
         public float sanitationWeight;
+        public float worstSanitationWeight;
         public float marineWeight;
 
         public static TileSpawnWeights Default => new TileSpawnWeights
@@ -17,6 +18,7 @@ namespace projectsplippy
             farmlandWeight = 0.72f,
             ecosystemWeight = 0.06f,
             sanitationWeight = 0.08f,
+            worstSanitationWeight = 0.03f,
             marineWeight = 0.14f
         };
     }
@@ -35,6 +37,8 @@ namespace projectsplippy
         private readonly TileGridModel model;
         private readonly TileSpawnWeights spawnWeights;
         private readonly System.Random random;
+
+        public int GridSize => gridSize;
 
         public TileBoardSystem(int gridSize, TileRules tileRules, TileSpawnWeights spawnWeights, int seed = 0)
         {
@@ -173,10 +177,11 @@ namespace projectsplippy
             return replaced;
         }
 
-        public Dictionary<Vector2Int, TileType> SpawnSanitationTiles(int amount, Vector2Int protectedCell)
+        public Dictionary<Vector2Int, TileType> SpawnSanitationTiles(int amount, Vector2Int protectedCell, float worstSanitationChance = 0f)
         {
             var replaced = new Dictionary<Vector2Int, TileType>();
             int target = Mathf.Max(0, amount);
+            float worstChance = Mathf.Clamp01(worstSanitationChance);
 
             if (target <= 0)
             {
@@ -198,7 +203,7 @@ namespace projectsplippy
 
                     TileType type = model.GetTileType(cell);
 
-                    if (type == TileType.Rock || type == TileType.Trash || type == TileType.Sanitation)
+                    if (type == TileType.Rock || type == TileType.Trash || type == TileType.Sanitation || type == TileType.WorstSanitation)
                     {
                         continue;
                     }
@@ -215,8 +220,12 @@ namespace projectsplippy
                 Vector2Int cell = candidates[randomIndex];
                 candidates.RemoveAt(randomIndex);
 
-                model.SetTileType(cell, TileType.Sanitation);
-                replaced[cell] = TileType.Sanitation;
+                TileType spawnType = Random01() <= worstChance
+                    ? TileType.WorstSanitation
+                    : TileType.Sanitation;
+
+                model.SetTileType(cell, spawnType);
+                replaced[cell] = spawnType;
             }
 
             return replaced;
@@ -228,7 +237,10 @@ namespace projectsplippy
             bool flipNonHazardsToFarmland)
         {
             TileType current = model.GetTileType(cell);
-            bool isHazard = current == TileType.Sanitation || current == TileType.Trash;
+            bool isHazard =
+                current == TileType.Sanitation ||
+                current == TileType.WorstSanitation ||
+                current == TileType.Trash;
 
             if (!isHazard && !flipNonHazardsToFarmland)
             {
@@ -267,6 +279,7 @@ namespace projectsplippy
                 Mathf.Max(0f, spawnWeights.farmlandWeight) +
                 Mathf.Max(0f, spawnWeights.ecosystemWeight) +
                 Mathf.Max(0f, spawnWeights.sanitationWeight) +
+                Mathf.Max(0f, spawnWeights.worstSanitationWeight) +
                 Mathf.Max(0f, spawnWeights.marineWeight);
 
             if (total <= 0f)
@@ -294,6 +307,12 @@ namespace projectsplippy
                 return TileType.Sanitation;
             }
 
+            roll -= Mathf.Max(0f, spawnWeights.worstSanitationWeight);
+            if (roll <= 0f)
+            {
+                return TileType.WorstSanitation;
+            }
+
             return TileType.Marine;
         }
 
@@ -310,6 +329,7 @@ namespace projectsplippy
                 Mathf.Max(0f, weights.farmlandWeight) +
                 Mathf.Max(0f, weights.ecosystemWeight) +
                 Mathf.Max(0f, weights.sanitationWeight) +
+                Mathf.Max(0f, weights.worstSanitationWeight) +
                 Mathf.Max(0f, weights.marineWeight);
 
             if (sum <= 0f)

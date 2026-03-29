@@ -10,6 +10,7 @@ namespace projectsplippy
             Farmland,
             Ecosystem,
             Sanitation,
+            WorstSanitation,
             Marine,
             Rock,
             Trash
@@ -44,6 +45,9 @@ namespace projectsplippy
                     break;
                 case TileType.Sanitation:
                     tileType = TileInspectorType.Sanitation;
+                    break;
+                case TileType.WorstSanitation:
+                    tileType = TileInspectorType.WorstSanitation;
                     break;
                 case TileType.Marine:
                     tileType = TileInspectorType.Marine;

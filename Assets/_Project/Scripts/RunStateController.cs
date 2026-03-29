@@ -38,6 +38,12 @@ namespace projectsplippy
         [SerializeField] private TMP_Text scoreText;
         [SerializeField] private TMP_Text sanitationSpawnTrackerText;
 
+        [Header("Preload UI Intro")]
+        [SerializeField] private bool enablePreloadHudIntro = true;
+        [SerializeField] private float preloadSliderYOffset = 50f;
+        [SerializeField] private float preloadScoreYOffset = -50f;
+        [SerializeField, Min(0.05f)] private float preloadHudIntroDuration = 0.45f;
+
         public bool IsGameOver { get; private set; }
         public int CurrentWaterReserve { get; private set; }
         public int CurrentScore { get; private set; }
@@ -53,6 +59,12 @@ namespace projectsplippy
         private Vector3 torrentSliderBaseScale = Vector3.one;
         private bool hasCachedTorrentSliderScale;
         private Coroutine torrentSliderValueTweenRoutine;
+        private RectTransform cachedSliderRect;
+        private RectTransform cachedScoreRect;
+        private Vector2 cachedSliderAnchoredPosition;
+        private Vector2 cachedScoreAnchoredPosition;
+        private bool hasCachedHudPositions;
+        private Coroutine preloadHudIntroRoutine;
 
         private bool chargePreviewActive;
         private int previewCharge;
@@ -123,7 +135,7 @@ namespace projectsplippy
                 TileStepResult step = stepResults[i];
                 int awarded = CalculateStepAward(step, ref previousEffectiveCropVariant, ref streakLength);
 
-                if (step.EnteredType == TileType.Sanitation)
+                if (step.EnteredType == TileType.Sanitation || step.EnteredType == TileType.WorstSanitation)
                 {
                     sanitationTouches++;
                 }
@@ -237,6 +249,71 @@ namespace projectsplippy
             previewPreviousEffectiveCropVariant = null;
             previewStreakLength = 0;
             UpdateTorrentSliderValueWithTween(GetSliderNormalizedValueForCharge(previewCharge), immediate: true);
+        }
+
+        public void PrepareHudForPreload()
+        {
+            CacheHudIntroPositions();
+
+            if (scoreText != null)
+            {
+                scoreText.text = "Score: 0";
+            }
+
+            if (torrentFlowSlider != null)
+            {
+                torrentFlowSlider.minValue = 0f;
+                torrentFlowSlider.maxValue = 1f;
+                torrentFlowSlider.value = 0f;
+            }
+
+            if (!enablePreloadHudIntro)
+            {
+                return;
+            }
+
+            if (preloadHudIntroRoutine != null)
+            {
+                StopCoroutine(preloadHudIntroRoutine);
+                preloadHudIntroRoutine = null;
+            }
+
+            if (cachedSliderRect != null)
+            {
+                cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition + new Vector2(0f, preloadSliderYOffset);
+            }
+
+            if (cachedScoreRect != null)
+            {
+                cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition + new Vector2(0f, preloadScoreYOffset);
+            }
+        }
+
+        public void PlayHudIntroFromPreload()
+        {
+            CacheHudIntroPositions();
+
+            if (!enablePreloadHudIntro)
+            {
+                if (cachedSliderRect != null)
+                {
+                    cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition;
+                }
+
+                if (cachedScoreRect != null)
+                {
+                    cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition;
+                }
+
+                return;
+            }
+
+            if (preloadHudIntroRoutine != null)
+            {
+                StopCoroutine(preloadHudIntroRoutine);
+            }
+
+            preloadHudIntroRoutine = StartCoroutine(TweenHudIntroRoutine());
         }
 
         public void PreviewPathStepCharge(TileStepResult step)
@@ -483,6 +560,75 @@ namespace projectsplippy
             }
 
             torrentSliderValueTweenRoutine = null;
+        }
+
+        private void CacheHudIntroPositions()
+        {
+            if (hasCachedHudPositions)
+            {
+                return;
+            }
+
+            if (torrentFlowSlider != null)
+            {
+                cachedSliderRect = torrentFlowSlider.transform as RectTransform;
+
+                if (cachedSliderRect != null)
+                {
+                    cachedSliderAnchoredPosition = cachedSliderRect.anchoredPosition;
+                }
+            }
+
+            if (scoreText != null)
+            {
+                cachedScoreRect = scoreText.transform as RectTransform;
+
+                if (cachedScoreRect != null)
+                {
+                    cachedScoreAnchoredPosition = cachedScoreRect.anchoredPosition;
+                }
+            }
+
+            hasCachedHudPositions = cachedSliderRect != null || cachedScoreRect != null;
+        }
+
+        private IEnumerator TweenHudIntroRoutine()
+        {
+            Vector2 sliderStart = cachedSliderRect != null ? cachedSliderRect.anchoredPosition : Vector2.zero;
+            Vector2 scoreStart = cachedScoreRect != null ? cachedScoreRect.anchoredPosition : Vector2.zero;
+            float duration = Mathf.Max(0.05f, preloadHudIntroDuration);
+            float elapsed = 0f;
+
+            while (elapsed < duration)
+            {
+                elapsed += Time.deltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                float eased = 1f - Mathf.Pow(1f - t, 3f);
+
+                if (cachedSliderRect != null)
+                {
+                    cachedSliderRect.anchoredPosition = Vector2.Lerp(sliderStart, cachedSliderAnchoredPosition, eased);
+                }
+
+                if (cachedScoreRect != null)
+                {
+                    cachedScoreRect.anchoredPosition = Vector2.Lerp(scoreStart, cachedScoreAnchoredPosition, eased);
+                }
+
+                yield return null;
+            }
+
+            if (cachedSliderRect != null)
+            {
+                cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition;
+            }
+
+            if (cachedScoreRect != null)
+            {
+                cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition;
+            }
+
+            preloadHudIntroRoutine = null;
         }
 
         private void CacheTorrentSliderScale()

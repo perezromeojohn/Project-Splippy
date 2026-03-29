@@ -31,6 +31,7 @@ namespace projectsplippy
             public TILE helper;
             public TextMeshPro sanitationTurnLabel;
             public SpriteRenderer trashBlockedIcon;
+            public SpriteRenderer worstSanitationMarker;
             public int farmlandCropVariantIndex = -1;
             public bool isSwapping;
             public Vector3 baseScale;
@@ -105,6 +106,14 @@ namespace projectsplippy
         [SerializeField] private float sanitationTurnLabelSize = 4.4f;
         [SerializeField] private float sanitationTurnLabelYOffset = 0.42f;
         [SerializeField] private Color sanitationTurnLabelColor = new Color32(0x7C, 0x8E, 0x02, 0xFF);
+        [SerializeField] private Color worstSanitationTurnLabelColor = new Color32(0xD8, 0x2A, 0x2A, 0xFF);
+
+        [Header("Worst Sanitation Marker")]
+        [SerializeField] private Sprite worstSanitationMarkerSprite;
+        [SerializeField] private float worstSanitationMarkerSize = 0.5f;
+        [SerializeField] private float worstSanitationMarkerYOffset = 0.27f;
+        [SerializeField] private Color worstSanitationMarkerColor = new Color32(0xD8, 0x2A, 0x2A, 0xFF);
+        [SerializeField] private int worstSanitationMarkerSortingOrder = 11;
 
         [Header("Trash Block Icon")]
         [SerializeField] private Sprite trashBlockedIconSprite;
@@ -170,7 +179,6 @@ namespace projectsplippy
             }
 
             EnsureFarmlandEntryExists(TILE.FarmlandCropType.Wheat);
-            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Sprout);
             EnsureFarmlandEntryExists(TILE.FarmlandCropType.Corn);
             EnsureFarmlandEntryExists(TILE.FarmlandCropType.Carrot);
         }
@@ -615,12 +623,14 @@ namespace projectsplippy
                     UpdateFarmlandPrefabSprites(visual, null);
                     UpdateSanitationTurnLabel(visual, null);
                     UpdateTrashBlockedIcon(visual, null);
+                    UpdateWorstSanitationMarker(visual, null);
                     continue;
                 }
 
                 UpdateFarmlandPrefabSprites(visual, tile);
                 UpdateSanitationTurnLabel(visual, tile);
                 UpdateTrashBlockedIcon(visual, tile);
+                UpdateWorstSanitationMarker(visual, tile);
             }
         }
 
@@ -739,7 +749,7 @@ namespace projectsplippy
             visual.rotateTween = Tween.LocalEulerAngles(visual.transform, visual.baseRotation, foldIn, halfDuration, tileReplaceFlipInEase)
                 .OnComplete(() =>
                 {
-                    ReplaceVisualModel(cell, newType);
+                    ReplaceVisualModel(cell, newType, hideChildSpriteRenderers: true);
 
                     if (!tileVisuals.TryGetValue(cell, out TileVisual replaced))
                     {
@@ -760,10 +770,14 @@ namespace projectsplippy
                         }
                     }
 
-                    if (newType == TileType.Sanitation)
+                    if (newType == TileType.Sanitation || newType == TileType.WorstSanitation)
                     {
-                        int turns = forcedSanitationTurns > 0 ? forcedSanitationTurns : 2;
-                        UpdateSanitationTurnLabelForTurns(replaced, turns);
+                        int defaultTurns = newType == TileType.WorstSanitation ? 1 : 2;
+                        int turns = forcedSanitationTurns > 0 ? forcedSanitationTurns : defaultTurns;
+                        Color labelColor = newType == TileType.WorstSanitation
+                            ? worstSanitationTurnLabelColor
+                            : sanitationTurnLabelColor;
+                        UpdateSanitationTurnLabelForTurns(replaced, turns, labelColor);
                     }
                     else
                     {
@@ -771,6 +785,8 @@ namespace projectsplippy
                     }
 
                     UpdateTrashBlockedIconForType(replaced, newType);
+                    UpdateWorstSanitationMarkerForType(replaced, newType);
+                    SetChildSpriteRendererVisibility(replaced.transform, true);
 
                     replaced.isSwapping = true;
 
@@ -827,6 +843,7 @@ namespace projectsplippy
                 helper = EnsureTileHelper(tileObject, type),
                 sanitationTurnLabel = CreateSanitationTurnLabel(tileObject.transform),
                 trashBlockedIcon = CreateTrashBlockedIcon(tileObject.transform),
+                worstSanitationMarker = CreateWorstSanitationMarker(tileObject.transform),
                 baseScale = tileObject.transform.localScale,
                 baseRotation = tileObject.transform.localEulerAngles
             };
@@ -837,7 +854,7 @@ namespace projectsplippy
             return visual;
         }
 
-        private void ReplaceVisualModel(Vector2Int cell, TileType newType)
+        private void ReplaceVisualModel(Vector2Int cell, TileType newType, bool hideChildSpriteRenderers = false)
         {
             if (!tileVisuals.TryGetValue(cell, out TileVisual oldVisual))
             {
@@ -860,6 +877,11 @@ namespace projectsplippy
             }
 
             tileVisuals[cell] = CreateVisual(cell, newType);
+
+            if (hideChildSpriteRenderers && tileVisuals.TryGetValue(cell, out TileVisual newVisual))
+            {
+                SetChildSpriteRendererVisibility(newVisual.transform, false);
+            }
         }
 
         private static void TweenOutChildSpriteRenderers(Transform root, float duration)
@@ -888,6 +910,28 @@ namespace projectsplippy
                 }
 
                 Tween.Scale(sr.transform, Vector3.zero, clampedDuration, Ease.InBack);
+            }
+        }
+
+        private static void SetChildSpriteRendererVisibility(Transform root, bool visible)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            SpriteRenderer[] childSprites = root.GetComponentsInChildren<SpriteRenderer>(includeInactive: true);
+
+            for (int i = 0; i < childSprites.Length; i++)
+            {
+                SpriteRenderer sr = childSprites[i];
+
+                if (sr == null || sr.transform == root)
+                {
+                    continue;
+                }
+
+                sr.enabled = visible;
             }
         }
 
@@ -1080,6 +1124,30 @@ namespace projectsplippy
             return icon;
         }
 
+        private SpriteRenderer CreateWorstSanitationMarker(Transform parent)
+        {
+            if (parent == null)
+            {
+                return null;
+            }
+
+            Sprite resolvedMarkerSprite = ResolveWorstSanitationMarkerSprite();
+
+            GameObject markerObject = new GameObject("WorstSanitationMarker");
+            markerObject.transform.SetParent(parent, false);
+            markerObject.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+
+            var marker = markerObject.AddComponent<SpriteRenderer>();
+            marker.sprite = resolvedMarkerSprite;
+            marker.color = worstSanitationMarkerColor;
+            marker.shadowCastingMode = ShadowCastingMode.Off;
+            marker.receiveShadows = false;
+            marker.sortingOrder = worstSanitationMarkerSortingOrder;
+
+            markerObject.SetActive(false);
+            return marker;
+        }
+
         private void UpdateSanitationTurnLabel(TileVisual visual, TileData tile)
         {
             if (visual == null || visual.sanitationTurnLabel == null)
@@ -1087,7 +1155,9 @@ namespace projectsplippy
                 return;
             }
 
-            bool show = tile != null && tile.Type == TileType.Sanitation;
+            bool show =
+                tile != null &&
+                (tile.Type == TileType.Sanitation || tile.Type == TileType.WorstSanitation);
 
             if (!show)
             {
@@ -1095,11 +1165,13 @@ namespace projectsplippy
                 return;
             }
 
-            int turns = Mathf.Max(0, tile.SanitationTimer);
-            UpdateSanitationTurnLabelForTurns(visual, turns);
+            bool isWorst = tile.Type == TileType.WorstSanitation;
+            int turns = isWorst ? 1 : Mathf.Max(0, tile.SanitationTimer);
+            Color labelColor = isWorst ? worstSanitationTurnLabelColor : sanitationTurnLabelColor;
+            UpdateSanitationTurnLabelForTurns(visual, turns, labelColor);
         }
 
-        private void UpdateSanitationTurnLabelForTurns(TileVisual visual, int turns)
+        private void UpdateSanitationTurnLabelForTurns(TileVisual visual, int turns, Color labelColor)
         {
             if (visual == null || visual.sanitationTurnLabel == null)
             {
@@ -1109,7 +1181,7 @@ namespace projectsplippy
             int clampedTurns = Mathf.Max(0, turns);
             string unit = clampedTurns == 1 ? "turn" : "turns";
             visual.sanitationTurnLabel.text = $"({clampedTurns} {unit})";
-            visual.sanitationTurnLabel.color = sanitationTurnLabelColor;
+            visual.sanitationTurnLabel.color = labelColor;
             visual.sanitationTurnLabel.fontSize = sanitationTurnLabelSize;
 
             if (sanitationTurnLabelFont != null)
@@ -1121,6 +1193,42 @@ namespace projectsplippy
             Vector3 pos = new Vector3(cellWorld.x, GetCellAnchorY(visual.cell) + sanitationTurnLabelYOffset, cellWorld.z);
             visual.sanitationTurnLabel.transform.position = pos;
             visual.sanitationTurnLabel.gameObject.SetActive(true);
+        }
+
+        private void UpdateWorstSanitationMarker(TileVisual visual, TileData tile)
+        {
+            UpdateWorstSanitationMarkerForType(visual, tile != null ? tile.Type : TileType.Filler);
+        }
+
+        private void UpdateWorstSanitationMarkerForType(TileVisual visual, TileType type)
+        {
+            if (visual == null || visual.worstSanitationMarker == null)
+            {
+                return;
+            }
+
+            Sprite markerSprite = ResolveWorstSanitationMarkerSprite();
+
+            bool show = type == TileType.WorstSanitation && markerSprite != null;
+
+            if (!show)
+            {
+                visual.worstSanitationMarker.gameObject.SetActive(false);
+                return;
+            }
+
+            visual.worstSanitationMarker.sprite = markerSprite;
+            visual.worstSanitationMarker.color = worstSanitationMarkerColor;
+            visual.worstSanitationMarker.sortingOrder = worstSanitationMarkerSortingOrder;
+            visual.worstSanitationMarker.enabled = true;
+
+            float size = Mathf.Max(0.01f, worstSanitationMarkerSize);
+            visual.worstSanitationMarker.transform.localScale = new Vector3(size, size, 1f);
+
+            Vector3 cellWorld = CellToWorld(visual.cell);
+            float y = GetCellAnchorY(visual.cell) + worstSanitationMarkerYOffset;
+            visual.worstSanitationMarker.transform.position = new Vector3(cellWorld.x, y, cellWorld.z);
+            visual.worstSanitationMarker.gameObject.SetActive(true);
         }
 
         private void UpdateTrashBlockedIcon(TileVisual visual, TileData tile)
@@ -1146,6 +1254,7 @@ namespace projectsplippy
             visual.trashBlockedIcon.sprite = trashBlockedIconSprite;
             visual.trashBlockedIcon.color = trashBlockedIconColor;
             visual.trashBlockedIcon.sortingOrder = trashBlockedIconSortingOrder;
+            visual.trashBlockedIcon.enabled = true;
 
             float size = Mathf.Max(0.01f, trashBlockedIconSize);
             visual.trashBlockedIcon.transform.localScale = new Vector3(size, size, 1f);
@@ -1154,6 +1263,17 @@ namespace projectsplippy
             float y = GetCellAnchorY(visual.cell) + trashBlockedIconYOffset;
             visual.trashBlockedIcon.transform.position = new Vector3(cellWorld.x, y, cellWorld.z);
             visual.trashBlockedIcon.gameObject.SetActive(true);
+        }
+
+        private Sprite ResolveWorstSanitationMarkerSprite()
+        {
+            if (worstSanitationMarkerSprite != null)
+            {
+                return worstSanitationMarkerSprite;
+            }
+
+            // Fall back to the configured trash icon so WorstSanitation remains visually marked.
+            return trashBlockedIconSprite;
         }
 
 
@@ -1409,6 +1529,8 @@ namespace projectsplippy
                     return new Color(0.45f, 0.9f, 0.45f, 1f);
                 case TILE.TileInspectorType.Sanitation:
                     return new Color(1f, 0.95f, 0.25f, 1f);
+                case TILE.TileInspectorType.WorstSanitation:
+                    return new Color(0.92f, 0.2f, 0.2f, 1f);
                 default:
                     return Color.white;
             }
@@ -1600,6 +1722,15 @@ namespace projectsplippy
             if (prefabByType.TryGetValue(type, out GameObject prefab) && prefab != null)
             {
                 return Instantiate(prefab);
+            }
+
+            if (type == TileType.WorstSanitation)
+            {
+                // If a dedicated WorstSanitation prefab is not assigned yet, reuse sanitation visuals.
+                if (prefabByType.TryGetValue(TileType.Sanitation, out GameObject sanitationPrefab) && sanitationPrefab != null)
+                {
+                    return Instantiate(sanitationPrefab);
+                }
             }
 
             if (fallbackGroundTilePrefab != null)

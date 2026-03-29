@@ -46,6 +46,7 @@ namespace projectsplippy
         [SerializeField, Range(0, 100)] private int farmlandPercent = 72;
         [SerializeField, Range(0, 100)] private int ecosystemPercent = 4;
         [SerializeField, Range(0, 100)] private int sanitationPercent = 8;
+        [SerializeField, Range(0, 100)] private int worstSanitationPercent = 3;
         [SerializeField, Range(0, 100)] private int marinePercent = 16;
 
         [Header("Player")]
@@ -174,6 +175,7 @@ namespace projectsplippy
             tileBoardSystem = new TileBoardSystem(gridSize, tileRules, BuildSpawnWeights());
             SetupInput();
             gameplayPressureController?.Initialize();
+            runState?.PrepareHudForPreload();
 
             if (preGameFlow != null)
             {
@@ -206,6 +208,7 @@ namespace projectsplippy
         private void Update()
         {
             boardView.UpdateBillboardInteractor(splippy.position);
+            gameplayPressureController?.SyncRunStateVisuals(currentPhase, runState);
             gameplayPressureController?.UpdateVignette(Time.deltaTime);
 
             bool movePressedThisFrame = moveTowardsAction != null && moveTowardsAction.WasPressedThisFrame();
@@ -510,6 +513,7 @@ namespace projectsplippy
         public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
         {
             currentPhase = GamePhase.Revealing;
+            runState?.PlayHudIntroFromPreload();
 
             tileBoardSystem.InitializeBoard(currentCell);
             Vector2Int center = CenterCell;
@@ -555,7 +559,7 @@ namespace projectsplippy
                         {
                             farmlandVariantIndex = tile.CropVariantIndex;
                         }
-                        else if (type == TileType.Sanitation)
+                        else if (type == TileType.Sanitation || type == TileType.WorstSanitation)
                         {
                             sanitationTurns = tile.SanitationTimer;
                         }
@@ -620,6 +624,7 @@ namespace projectsplippy
         {
             tileBoardSystem.InitializeBoard(currentCell);
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, tilePadding);
+            runState?.PlayHudIntroFromPreload();
             runState.Initialize();
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);
@@ -1114,9 +1119,10 @@ namespace projectsplippy
             farmlandPercent = Mathf.Clamp(farmlandPercent, 0, 100);
             ecosystemPercent = Mathf.Clamp(ecosystemPercent, 0, 100);
             sanitationPercent = Mathf.Clamp(sanitationPercent, 0, 100);
+            worstSanitationPercent = Mathf.Clamp(worstSanitationPercent, 0, 100);
             marinePercent = Mathf.Clamp(marinePercent, 0, 100);
 
-            int total = farmlandPercent + ecosystemPercent + sanitationPercent + marinePercent;
+            int total = farmlandPercent + ecosystemPercent + sanitationPercent + worstSanitationPercent + marinePercent;
 
             if (total <= 0)
             {
@@ -1130,6 +1136,7 @@ namespace projectsplippy
                 farmlandWeight = farmlandPercent * invTotal,
                 ecosystemWeight = ecosystemPercent * invTotal,
                 sanitationWeight = sanitationPercent * invTotal,
+                worstSanitationWeight = worstSanitationPercent * invTotal,
                 marineWeight = marinePercent * invTotal
             };
         }

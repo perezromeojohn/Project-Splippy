@@ -94,13 +94,13 @@ namespace projectsplippy
                         yield return new WaitForSeconds(pause);
                     }
 
-                    Dictionary<Vector2Int, TileType> crossReplacements =
-                        tileBoardSystem.ClearHazardsInCross(marineCenter);
+                    tileBoardSystem.ClearHazardsInCross(marineCenter);
+                    Dictionary<Vector2Int, TileType> crossVisualFlips = BuildCrossVisualFlips(tileBoardSystem, marineCenter);
 
                     yield return StartCoroutine(PlayReplacementFlipsOutward(
                         tileBoardSystem,
                         boardView,
-                        crossReplacements,
+                        crossVisualFlips,
                         marineCenter));
                 }
             }
@@ -189,7 +189,7 @@ namespace projectsplippy
                 {
                     farmlandVariantIndex = tile.CropVariantIndex;
                 }
-                else if (tileType == TileType.Sanitation)
+                else if (tileType == TileType.Sanitation || tileType == TileType.WorstSanitation)
                 {
                     sanitationTurns = tile.SanitationTimer;
                 }
@@ -201,6 +201,55 @@ namespace projectsplippy
                 pulseAfterReplace: true,
                 forcedFarmlandCropVariantIndex: farmlandVariantIndex,
                 forcedSanitationTurns: sanitationTurns);
+        }
+
+        private static Dictionary<Vector2Int, TileType> BuildCrossVisualFlips(
+            TileBoardSystem tileBoardSystem,
+            Vector2Int center)
+        {
+            var flips = new Dictionary<Vector2Int, TileType>();
+
+            if (tileBoardSystem == null)
+            {
+                return flips;
+            }
+
+            int gridSize = tileBoardSystem.GridSize;
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                AddCrossVisualFlipForCell(tileBoardSystem, new Vector2Int(x, center.y), flips);
+            }
+
+            for (int y = 0; y < gridSize; y++)
+            {
+                AddCrossVisualFlipForCell(tileBoardSystem, new Vector2Int(center.x, y), flips);
+            }
+
+            return flips;
+        }
+
+        private static void AddCrossVisualFlipForCell(
+            TileBoardSystem tileBoardSystem,
+            Vector2Int cell,
+            Dictionary<Vector2Int, TileType> flips)
+        {
+            if (flips.ContainsKey(cell))
+            {
+                return;
+            }
+
+            if (!tileBoardSystem.TryGetTile(cell, out TileData tile) || tile == null)
+            {
+                return;
+            }
+
+            if (tile.Type == TileType.Rock || tile.Type == TileType.Filler)
+            {
+                return;
+            }
+
+            flips[cell] = tile.Type;
         }
 
         private static List<string> BuildCollisionOrderDebug(IReadOnlyList<TileStepResult> steps, TileBoardView boardView)

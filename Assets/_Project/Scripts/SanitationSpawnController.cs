@@ -19,6 +19,7 @@ namespace projectsplippy
         [SerializeField, Min(1)] private int surgeSpawnAmount = 2;
         [SerializeField, Min(1)] private int chaosSpawnEveryTurns = 1;
         [SerializeField, Min(1)] private int chaosSpawnAmount = 3;
+        [SerializeField, Range(0f, 1f)] private float worstSanitationSpawnChance = 0.22f;
 
         private int turnsSinceSanitationSpawn;
 
@@ -49,7 +50,10 @@ namespace projectsplippy
             }
 
             turnsSinceSanitationSpawn = 0;
-            Dictionary<Vector2Int, TileType> spawned = tileBoardSystem.SpawnSanitationTiles(spawnAmount, protectedCell);
+            Dictionary<Vector2Int, TileType> spawned = tileBoardSystem.SpawnSanitationTiles(
+                spawnAmount,
+                protectedCell,
+                worstSanitationSpawnChance);
 
             foreach (KeyValuePair<Vector2Int, TileType> replacement in spawned)
             {
@@ -62,7 +66,7 @@ namespace projectsplippy
                     {
                         farmlandVariantIndex = tile.CropVariantIndex;
                     }
-                    else if (replacement.Value == TileType.Sanitation)
+                    else if (replacement.Value == TileType.Sanitation || replacement.Value == TileType.WorstSanitation)
                     {
                         sanitationTurns = tile.SanitationTimer;
                     }

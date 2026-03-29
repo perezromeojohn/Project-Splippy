@@ -9,6 +9,7 @@ namespace projectsplippy
         Farmland,
         Ecosystem,
         Sanitation,
+        WorstSanitation,
         Marine,
         Rock,
         Trash
@@ -38,7 +39,9 @@ namespace projectsplippy
         {
             Type = type;
             TurnsSinceTouched = 0;
-            SanitationTimer = type == TileType.Sanitation ? Mathf.Max(1, rules.sanitationTimeoutTurns) : 0;
+            SanitationTimer = type == TileType.Sanitation
+                ? Mathf.Max(1, rules.sanitationTimeoutTurns)
+                : (type == TileType.WorstSanitation ? 1 : 0);
             CropVariantIndex = -1;
         }
 
@@ -103,6 +106,31 @@ namespace projectsplippy
         public MarineTileData(TileRules rules)
             : base(TileType.Marine, rules)
         {
+        }
+    }
+
+    public sealed class WorstSanitationTileData : TileData
+    {
+        public WorstSanitationTileData(TileRules rules)
+            : base(TileType.WorstSanitation, rules)
+        {
+            SanitationTimer = 1;
+        }
+
+        public override void ApplyLanding(TileLandingResult result, TileRules rules)
+        {
+            SanitationTimer = 1;
+        }
+
+        public override void AdvanceUnlandedTurn(TileLandingResult result, TileRules rules, Vector2Int cell)
+        {
+            SanitationTimer--;
+
+            if (SanitationTimer <= 0)
+            {
+                SanitationTimer = 0;
+                result.ExpiredToTrashCells.Add(cell);
+            }
         }
     }
 
@@ -253,6 +281,8 @@ namespace projectsplippy
                     return new EcosystemTileData(rules);
                 case TileType.Sanitation:
                     return new SanitationTileData(rules);
+                case TileType.WorstSanitation:
+                    return new WorstSanitationTileData(rules);
                 case TileType.Marine:
                     return new MarineTileData(rules);
                 case TileType.Rock:
