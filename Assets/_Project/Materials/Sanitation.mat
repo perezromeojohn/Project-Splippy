@@ -31,9 +31,9 @@ Material:
     - _JitterSpeed: 1.48
     - _Seed: 3
     m_Colors:
-    - _FoamColor: {r: 0.53546685, g: 0.98039216, b: 0.29019615, a: 1}
+    - _FoamColor: {r: 0.4864459, g: 0.5566038, b: 0.007876454, a: 1}
     - _NeighborMask: {r: 0, g: 0, b: 0, a: 0}
     - _TopHalfExtents: {r: 0.8, g: 0.8, b: 0, a: 0}
-    - _WaterColor: {r: 0.25434324, g: 0.5471698, b: 0, a: 1}
+    - _WaterColor: {r: 0.27671444, g: 0.32156864, b: 0, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

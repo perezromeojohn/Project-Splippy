@@ -48,7 +48,7 @@ Material:
     - _SoftnessPower: 2.4
     - _TopNormalThreshold: 0.642
     m_Colors:
-    - _Color: {r: 0.37930578, g: 0.5849056, b: 0.013794942, a: 1}
-    - _InkColor: {r: 0.6028231, g: 1, b: 0.042452812, a: 1}
+    - _Color: {r: 0.45316783, g: 0.4811321, b: 0.029503396, a: 1}
+    - _InkColor: {r: 0.44190353, g: 0.5471698, b: 0.023228897, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
