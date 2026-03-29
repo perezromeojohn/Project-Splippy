@@ -108,6 +108,7 @@ namespace projectsplippy
                 for (int i = 0; i < marineCenters.Count; i++)
                 {
                     Vector2Int marineCenter = marineCenters[i];
+                    runState?.PlayTorrentModeSfx();
                     boardView.PlayFloatingText(marineCenter, "MARINE!!", marineTextColor);
 
                     float pause = Mathf.Max(0f, marinePauseDuration);
