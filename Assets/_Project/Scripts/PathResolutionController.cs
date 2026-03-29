@@ -41,6 +41,7 @@ namespace projectsplippy
             var traversedCells = new List<Vector2Int>(deferredPathStepResults.Count);
             var marineCenters = new List<Vector2Int>();
             var forceFarmlandCells = new HashSet<Vector2Int>();
+            var immediateDecayFlips = new HashSet<Vector2Int>();
 
             if (torrentActivated)
             {
@@ -68,7 +69,29 @@ namespace projectsplippy
                     for (int e = 0; e < step.LandingResult.ExpiredToTrashCells.Count; e++)
                     {
                         Vector2Int expiredCell = step.LandingResult.ExpiredToTrashCells[e];
+
+                        if (!immediateDecayFlips.Add(expiredCell))
+                        {
+                            continue;
+                        }
+
                         boardView.PlayTileReplacementFlip(expiredCell, TileType.Trash, pulseAfterReplace: true);
+                    }
+
+                    for (int w = 0; w < step.LandingResult.InfectedToWorstSanitationCells.Count; w++)
+                    {
+                        Vector2Int infectedCell = step.LandingResult.InfectedToWorstSanitationCells[w];
+
+                        if (!immediateDecayFlips.Add(infectedCell))
+                        {
+                            continue;
+                        }
+
+                        boardView.PlayTileReplacementFlip(
+                            infectedCell,
+                            TileType.WorstSanitation,
+                            pulseAfterReplace: true,
+                            forcedSanitationTurns: 1);
                     }
                 }
             }
@@ -171,6 +194,13 @@ namespace projectsplippy
                 {
                     yield return new WaitForSeconds(rippleDelay);
                 }
+            }
+
+            float completionWait = boardView != null ? boardView.TileReplacementFlipDuration : 0f;
+
+            if (completionWait > 0f)
+            {
+                yield return new WaitForSeconds(completionWait);
             }
         }
 

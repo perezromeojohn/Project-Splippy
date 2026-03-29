@@ -68,6 +68,7 @@ namespace projectsplippy
         [SerializeField, Range(0f, 0.45f)] private float splippyIdleSquashAmount = 0.14f;
         [SerializeField] private float splippyIdleSquashHalfDuration = 0.32f;
         [SerializeField] private Ease splippyIdleSquashEase = Ease.InOutSine;
+        [SerializeField, Min(0f)] private float marineFinalDestinationEndTurnDelay = 0.5f;
 
         private Camera mainCamera;
         private InputAction moveTowardsAction;
@@ -826,7 +827,7 @@ namespace projectsplippy
                                     }
                                     else
                                     {
-                                        StartCoroutine(FinalizeGameplayMoveRoutine());
+                                        StartCoroutine(FinalizeGameplayMoveRoutine(marineFinalDestinationEndTurnDelay));
                                     }
 
                                     return;
@@ -847,9 +848,11 @@ namespace projectsplippy
                 });
         }
 
-        private IEnumerator FinalizeGameplayMoveRoutine()
+        private IEnumerator FinalizeGameplayMoveRoutine(float delayBeforeEndTurnSystems = 0f)
         {
-            yield return StartCoroutine(ResolvePostMoveEventsRoutine(applyEndOfTurnSystems: true));
+            yield return StartCoroutine(ResolvePostMoveEventsRoutine(
+                applyEndOfTurnSystems: true,
+                delayBeforeEndTurnSystems: delayBeforeEndTurnSystems));
             CompleteGameplayMove();
         }
 
@@ -882,7 +885,7 @@ namespace projectsplippy
             StartSplippyIdleSquashIfReady();
         }
 
-        private IEnumerator ResolvePostMoveEventsRoutine(bool applyEndOfTurnSystems)
+        private IEnumerator ResolvePostMoveEventsRoutine(bool applyEndOfTurnSystems, float delayBeforeEndTurnSystems = 0f)
         {
             if (tileBoardSystem == null)
             {
@@ -903,6 +906,16 @@ namespace projectsplippy
             {
                 boardView.RefreshProgressVisuals(tileBoardSystem);
                 deferredPathStepResults.Clear();
+            }
+
+            if (
+                applyEndOfTurnSystems &&
+                delayBeforeEndTurnSystems > 0f &&
+                currentPhase == GamePhase.Gameplay &&
+                runState != null &&
+                !runState.IsGameOver)
+            {
+                yield return new WaitForSeconds(delayBeforeEndTurnSystems);
             }
 
             if (

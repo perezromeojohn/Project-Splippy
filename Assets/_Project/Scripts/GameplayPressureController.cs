@@ -15,7 +15,7 @@ namespace projectsplippy
         [Header("Torrent Vignette")]
         [SerializeField] private bool enableTorrentBlueVignette = true;
         [SerializeField] private Color torrentVignetteColor = new Color(0.24f, 0.52f, 1f, 1f);
-        [SerializeField, Range(0f, 1f)] private float torrentVignetteIntensity = 0.24f;
+        [SerializeField, Range(0f, 1f)] private float torrentVignetteIntensity = 0.9f;
 
         [Header("Torrent Particle Hook")]
         [SerializeField] private ParticleSystem torrentParticleEmitter;

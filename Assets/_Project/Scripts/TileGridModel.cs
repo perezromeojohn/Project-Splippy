@@ -164,12 +164,20 @@ namespace projectsplippy
     {
         public Vector2Int LandedCell;
         public readonly List<Vector2Int> ExpiredToTrashCells = new List<Vector2Int>();
+        public readonly List<Vector2Int> InfectedToWorstSanitationCells = new List<Vector2Int>();
     }
 
     public sealed class TileGridModel
     {
         private readonly TileRules rules;
         private readonly Dictionary<Vector2Int, TileData> tiles = new Dictionary<Vector2Int, TileData>();
+        private static readonly Vector2Int[] CardinalDirections =
+        {
+            new Vector2Int(1, 0),
+            new Vector2Int(-1, 0),
+            new Vector2Int(0, 1),
+            new Vector2Int(0, -1)
+        };
 
         public TileGridModel(int gridSize, TileRules rules)
         {
@@ -226,6 +234,18 @@ namespace projectsplippy
 
                     SetTileType(expiredCell, TileType.Trash);
                 }
+
+                for (int i = 0; i < result.InfectedToWorstSanitationCells.Count; i++)
+                {
+                    Vector2Int infectedCell = result.InfectedToWorstSanitationCells[i];
+
+                    if (infectedCell == landedCell)
+                    {
+                        continue;
+                    }
+
+                    SetTileType(infectedCell, TileType.WorstSanitation);
+                }
             }
 
             if (!tiles.TryGetValue(landedCell, out TileData landed))
@@ -268,7 +288,84 @@ namespace projectsplippy
                 tile.AdvanceUnlandedTurn(result, rules, cell);
 
                 tiles[cell] = tile;
+
+                if (tile.Type == TileType.WorstSanitation && tile.SanitationTimer <= 0)
+                {
+                    TrySpreadWorstSanitationToNeighbor(cell, touchedThisTurn, result);
+                }
             }
+        }
+
+        private void TrySpreadWorstSanitationToNeighbor(
+            Vector2Int sourceCell,
+            HashSet<Vector2Int> touchedThisTurn,
+            TileLandingResult result)
+        {
+            var candidates = new List<Vector2Int>(CardinalDirections.Length);
+
+            for (int i = 0; i < CardinalDirections.Length; i++)
+            {
+                Vector2Int candidate = sourceCell + CardinalDirections[i];
+
+                if (touchedThisTurn != null && touchedThisTurn.Contains(candidate))
+                {
+                    continue;
+                }
+
+                if (!tiles.TryGetValue(candidate, out TileData candidateTile) || candidateTile == null)
+                {
+                    continue;
+                }
+
+                if (!IsEligibleWorstSanitationInfectionTarget(candidateTile.Type))
+                {
+                    continue;
+                }
+
+                if (ContainsCell(result.ExpiredToTrashCells, candidate) ||
+                    ContainsCell(result.InfectedToWorstSanitationCells, candidate))
+                {
+                    continue;
+                }
+
+                candidates.Add(candidate);
+            }
+
+            if (candidates.Count <= 0)
+            {
+                return;
+            }
+
+            int index = Random.Range(0, candidates.Count);
+            Vector2Int infectedCell = candidates[index];
+            result.InfectedToWorstSanitationCells.Add(infectedCell);
+        }
+
+        private static bool IsEligibleWorstSanitationInfectionTarget(TileType type)
+        {
+            return type != TileType.Trash &&
+                   type != TileType.Sanitation &&
+                   type != TileType.WorstSanitation &&
+                   type != TileType.Rock &&
+                   type != TileType.Filler;
+        }
+
+        private static bool ContainsCell(List<Vector2Int> cells, Vector2Int target)
+        {
+            if (cells == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < cells.Count; i++)
+            {
+                if (cells[i] == target)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private TileData CreateTileData(TileType type)

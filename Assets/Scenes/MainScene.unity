@@ -1179,6 +1179,14 @@ MonoBehaviour:
   torrentFlowSlider: {fileID: 7857259321716821395}
   scoreText: {fileID: 990908597}
   sanitationSpawnTrackerText: {fileID: 0}
+  torrentModeLabel: {fileID: 51105593}
+  showTorrentModeLabel: 1
+  torrentModeLabelText: TORRENT MODE
+  torrentModeLabelHiddenScale: 0
+  torrentModeLabelShownScale: 1
+  torrentModeLabelTweenDuration: 0.2
+  torrentModeLabelTweenEase: 27
+  torrentModeLabelHideEase: 26
   enablePreloadHudIntro: 1
   preloadSliderYOffset: 50
   preloadScoreYOffset: -50
@@ -1269,6 +1277,7 @@ MonoBehaviour:
   splippyIdleSquashAmount: 0.2
   splippyIdleSquashHalfDuration: 0.65
   splippyIdleSquashEase: 4
+  marineFinalDestinationEndTurnDelay: 0.5
 --- !u!114 &729955188
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -1620,12 +1629,10 @@ MonoBehaviour:
   farmlandCropSpriteEntries:
   - crop: 0
     sprite: {fileID: 21300000, guid: dd4804264223caa4ebeef900e8f08325, type: 3}
-  - crop: 3
-    sprite: {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
-  - crop: 3
-    sprite: {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
   - crop: 2
-    sprite: {fileID: 0}
+    sprite: {fileID: 21300000, guid: 04e3e472c243f3d4fbb9090d6ee59ed0, type: 3}
+  - crop: 3
+    sprite: {fileID: 21300000, guid: 58fc68968693cb24ba90d2b9df60d214, type: 3}
   farmlandBillboardTint: {r: 1, g: 1, b: 1, a: 1}
   billboardInteractorRadius: 0.5
   farmlandBillboardCastShadows: 1

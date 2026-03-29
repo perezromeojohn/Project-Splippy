@@ -23,6 +23,13 @@ namespace projectsplippy
             public Sprite sprite;
         }
 
+        private static readonly TILE.FarmlandCropType[] SupportedFarmlandCrops =
+        {
+            TILE.FarmlandCropType.Wheat,
+            TILE.FarmlandCropType.Corn,
+            TILE.FarmlandCropType.Carrot
+        };
+
         private sealed class TileVisual
         {
             public Vector2Int cell;
@@ -67,12 +74,11 @@ namespace projectsplippy
         [SerializeField] private bool farmlandBillboardCastShadows = true;
         [SerializeField] private bool farmlandBillboardReceiveShadows = true;
 
-        public int AvailableCropSpriteCount => Mathf.Max(1, farmlandCropSpriteEntries != null ? farmlandCropSpriteEntries.Count : 0);
+        public int AvailableCropSpriteCount => SupportedFarmlandCrops.Length;
 
         public string GetCropVariantLabel(int variantIndex)
         {
-            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
-            return farmlandCropSpriteEntries[index].crop.ToString();
+            return GetCropTypeForVariant(variantIndex).ToString();
         }
 
         [Header("Hover Preview")]
@@ -100,6 +106,8 @@ namespace projectsplippy
         [SerializeField] private float hoverScorePreviewYOffset = 0.32f;
         [SerializeField] private int hoverScorePreviewSortingOrder = 12;
         [SerializeField] private AudioSource hoverPreviewAudioSource;
+        [SerializeField] private Color hoverScoreFlatColor = Color.white;
+        [SerializeField] private Gradient hoverScoreUpwardGradient = new Gradient();
 
         [Header("Sanitation Timer Label")]
         [SerializeField] private TMP_FontAsset sanitationTurnLabelFont;
@@ -132,6 +140,7 @@ namespace projectsplippy
         [SerializeField] private int floatingEventTextSortingOrder = 14;
 
         public float GroundTopYOffset => tileYOffset + groundTopYOffset;
+        public float TileReplacementFlipDuration => Mathf.Max(0.05f, tileReplaceFlipDuration);
 
         private readonly Dictionary<TileType, GameObject> prefabByType = new Dictionary<TileType, GameObject>();
         private readonly Dictionary<Vector2Int, TileVisual> tileVisuals = new Dictionary<Vector2Int, TileVisual>();
@@ -164,11 +173,13 @@ namespace projectsplippy
         private void OnValidate()
         {
             EnsureFarmlandEntryDefaults();
+            EnsureScoreGradientDefaults();
         }
 
         private void Awake()
         {
             EnsureFarmlandEntryDefaults();
+            EnsureScoreGradientDefaults();
         }
 
         private void EnsureFarmlandEntryDefaults()
@@ -178,26 +189,117 @@ namespace projectsplippy
                 farmlandCropSpriteEntries = new List<FarmlandCropSpriteEntry>();
             }
 
-            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Wheat);
-            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Corn);
-            EnsureFarmlandEntryExists(TILE.FarmlandCropType.Carrot);
-        }
+            var spritesByCrop = new Dictionary<TILE.FarmlandCropType, Sprite>();
 
-        private void EnsureFarmlandEntryExists(TILE.FarmlandCropType cropType)
-        {
             for (int i = 0; i < farmlandCropSpriteEntries.Count; i++)
             {
-                if (farmlandCropSpriteEntries[i].crop == cropType)
+                FarmlandCropSpriteEntry entry = farmlandCropSpriteEntries[i];
+
+                if (!IsSupportedFarmlandCrop(entry.crop))
                 {
-                    return;
+                    continue;
+                }
+
+                if (!spritesByCrop.TryGetValue(entry.crop, out Sprite existing) || (existing == null && entry.sprite != null))
+                {
+                    spritesByCrop[entry.crop] = entry.sprite;
                 }
             }
 
-            farmlandCropSpriteEntries.Add(new FarmlandCropSpriteEntry
+            var normalizedEntries = new List<FarmlandCropSpriteEntry>(SupportedFarmlandCrops.Length);
+
+            for (int i = 0; i < SupportedFarmlandCrops.Length; i++)
             {
-                crop = cropType,
-                sprite = null
-            });
+                TILE.FarmlandCropType crop = SupportedFarmlandCrops[i];
+                spritesByCrop.TryGetValue(crop, out Sprite sprite);
+                normalizedEntries.Add(new FarmlandCropSpriteEntry
+                {
+                    crop = crop,
+                    sprite = sprite
+                });
+            }
+
+            farmlandCropSpriteEntries = normalizedEntries;
+        }
+
+        private void EnsureScoreGradientDefaults()
+        {
+            if (hoverScoreUpwardGradient == null)
+            {
+                hoverScoreUpwardGradient = new Gradient();
+            }
+
+            if (ShouldAssignDefaultScoreGradient(hoverScoreUpwardGradient))
+            {
+                hoverScoreUpwardGradient.SetKeys(
+                    new[]
+                    {
+                        new GradientColorKey(new Color32(0x6A, 0xD6, 0xFF, 0xFF), 0f),
+                        new GradientColorKey(new Color32(0xFF, 0xD6, 0x3A, 0xFF), 1f)
+                    },
+                    new[]
+                    {
+                        new GradientAlphaKey(1f, 0f),
+                        new GradientAlphaKey(1f, 1f)
+                    });
+            }
+        }
+
+        private static bool IsSupportedFarmlandCrop(TILE.FarmlandCropType cropType)
+        {
+            for (int i = 0; i < SupportedFarmlandCrops.Length; i++)
+            {
+                if (SupportedFarmlandCrops[i] == cropType)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ShouldAssignDefaultScoreGradient(Gradient gradient)
+        {
+            if (gradient == null)
+            {
+                return true;
+            }
+
+            GradientColorKey[] colorKeys = gradient.colorKeys;
+            GradientAlphaKey[] alphaKeys = gradient.alphaKeys;
+
+            if (colorKeys == null || colorKeys.Length == 0)
+            {
+                return true;
+            }
+
+            if (colorKeys.Length != 2 || alphaKeys == null || alphaKeys.Length != 2)
+            {
+                return false;
+            }
+
+            bool defaultColors =
+                Mathf.Approximately(colorKeys[0].time, 0f) &&
+                Mathf.Approximately(colorKeys[1].time, 1f) &&
+                IsApproximatelyWhite(colorKeys[0].color) &&
+                IsApproximatelyWhite(colorKeys[1].color);
+
+            bool defaultAlphas =
+                Mathf.Approximately(alphaKeys[0].time, 0f) &&
+                Mathf.Approximately(alphaKeys[1].time, 1f) &&
+                Mathf.Approximately(alphaKeys[0].alpha, 1f) &&
+                Mathf.Approximately(alphaKeys[1].alpha, 1f);
+
+            return defaultColors && defaultAlphas;
+        }
+
+        private static bool IsApproximatelyWhite(Color color)
+        {
+            return
+                Mathf.Abs(color.r - 1f) <= 0.0001f &&
+                Mathf.Abs(color.g - 1f) <= 0.0001f &&
+                Mathf.Abs(color.b - 1f) <= 0.0001f &&
+                Mathf.Abs(color.a - 1f) <= 0.0001f;
         }
 
         public void BuildBoard(int gridSize, float cellSize, Vector3 gridCenter, TileBoardSystem boardSystem, float cellPadding = 0f)
@@ -278,7 +380,7 @@ namespace projectsplippy
             EnsureHoverScoreLabelCount(nodeCount);
             var nodePositions = new Vector3[nodeCount];
             int[] scorePreview = GetHoverScorePreview(path);
-            Color[] scoreColors = GetHoverScoreColors(path);
+            Color[] scoreColors = GetHoverScoreColors(path, scorePreview);
             bool snapThisUpdate = hoverPreviewSnapNextUpdate;
             hoverPreviewSnapNextUpdate = false;
             float posT = snapThisUpdate ? 1f : (1f - Mathf.Exp(-Mathf.Max(0.01f, hoverPreviewFollowSpeed) * Time.deltaTime));
@@ -1126,26 +1228,7 @@ namespace projectsplippy
 
         private SpriteRenderer CreateWorstSanitationMarker(Transform parent)
         {
-            if (parent == null)
-            {
-                return null;
-            }
-
-            Sprite resolvedMarkerSprite = ResolveWorstSanitationMarkerSprite();
-
-            GameObject markerObject = new GameObject("WorstSanitationMarker");
-            markerObject.transform.SetParent(parent, false);
-            markerObject.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
-
-            var marker = markerObject.AddComponent<SpriteRenderer>();
-            marker.sprite = resolvedMarkerSprite;
-            marker.color = worstSanitationMarkerColor;
-            marker.shadowCastingMode = ShadowCastingMode.Off;
-            marker.receiveShadows = false;
-            marker.sortingOrder = worstSanitationMarkerSortingOrder;
-
-            markerObject.SetActive(false);
-            return marker;
+            return null;
         }
 
         private void UpdateSanitationTurnLabel(TileVisual visual, TileData tile)
@@ -1279,25 +1362,20 @@ namespace projectsplippy
 
         private Sprite GetCropSpriteForVariant(int variantIndex)
         {
-            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
+            TILE.FarmlandCropType cropType = GetCropTypeForVariant(variantIndex);
+
+            if (farmlandCropSpriteEntries == null)
             {
                 return null;
             }
 
-            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
-            index = Mathf.Clamp(index, 0, farmlandCropSpriteEntries.Count - 1);
-            Sprite selected = farmlandCropSpriteEntries[index].sprite;
-
-            if (selected != null)
-            {
-                return selected;
-            }
-
             for (int i = 0; i < farmlandCropSpriteEntries.Count; i++)
             {
-                if (farmlandCropSpriteEntries[i].sprite != null)
+                FarmlandCropSpriteEntry entry = farmlandCropSpriteEntries[i];
+
+                if (entry.crop == cropType && entry.sprite != null)
                 {
-                    return farmlandCropSpriteEntries[i].sprite;
+                    return entry.sprite;
                 }
             }
 
@@ -1306,14 +1384,10 @@ namespace projectsplippy
 
         private TILE.FarmlandCropType GetCropTypeForVariant(int variantIndex)
         {
-            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
-            {
-                return TILE.FarmlandCropType.Sprout;
-            }
-
-            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
-            index = Mathf.Clamp(index, 0, farmlandCropSpriteEntries.Count - 1);
-            return farmlandCropSpriteEntries[index].crop;
+            int count = SupportedFarmlandCrops.Length;
+            int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, count);
+            index = Mathf.Clamp(index, 0, count - 1);
+            return SupportedFarmlandCrops[index];
         }
 
         private Material ResolveFarmlandBillboardMaterial()
@@ -1442,7 +1516,10 @@ namespace projectsplippy
 
                 if (type == TILE.TileInspectorType.Farmland)
                 {
-                    effectiveCrop = (int)visual.helper.CurrentFarmlandCrop;
+                    if (visual.farmlandCropVariantIndex >= 0)
+                    {
+                        effectiveCrop = TileGridModel.NormalizeCropVariantIndex(visual.farmlandCropVariantIndex, AvailableCropSpriteCount);
+                    }
                 }
                 else if (type == TILE.TileInspectorType.Ecosystem)
                 {
@@ -1491,7 +1568,7 @@ namespace projectsplippy
             return ComputeHoverScorePreview(path);
         }
 
-        private Color[] GetHoverScoreColors(IReadOnlyList<Vector2Int> path)
+        private Color[] GetHoverScoreColors(IReadOnlyList<Vector2Int> path, int[] scorePreview)
         {
             int count = path != null ? path.Count : 0;
             var colors = new Color[count];
@@ -1506,34 +1583,58 @@ namespace projectsplippy
                 return frozenHoverScoreColors.ToArray();
             }
 
+            return ComputeHoverScoreColors(path, scorePreview);
+        }
+
+        private Color[] ComputeHoverScoreColors(IReadOnlyList<Vector2Int> path, int[] scorePreview)
+        {
+            int count = path != null ? path.Count : 0;
+            var colors = new Color[count];
+
+            if (count <= 0)
+            {
+                return colors;
+            }
+
+            int maxScore = 1;
+
+            if (scorePreview != null)
+            {
+                for (int i = 1; i < scorePreview.Length; i++)
+                {
+                    maxScore = Mathf.Max(maxScore, scorePreview[i]);
+                }
+            }
+
             for (int i = 0; i < count; i++)
             {
-                colors[i] = GetScoreColorForCell(path[i]);
+                int currentScore = scorePreview != null && i < scorePreview.Length
+                    ? Mathf.Max(0, scorePreview[i])
+                    : 0;
+                int previousScore = scorePreview != null && i > 0 && i - 1 < scorePreview.Length
+                    ? Mathf.Max(0, scorePreview[i - 1])
+                    : 0;
+
+                colors[i] = ResolveHoverScoreColor(currentScore, previousScore, maxScore);
             }
 
             return colors;
         }
 
-        private Color GetScoreColorForCell(Vector2Int cell)
+        private Color ResolveHoverScoreColor(int currentScore, int previousScore, int maxScore)
         {
-            if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual == null || visual.helper == null)
+            if (currentScore <= 0 || currentScore <= previousScore || maxScore <= 1)
             {
-                return Color.white;
+                return hoverScoreFlatColor;
             }
 
-            switch (visual.helper.CurrentTileType)
-            {
-                case TILE.TileInspectorType.Marine:
-                    return new Color(0.35f, 0.72f, 1f, 1f);
-                case TILE.TileInspectorType.Ecosystem:
-                    return new Color(0.45f, 0.9f, 0.45f, 1f);
-                case TILE.TileInspectorType.Sanitation:
-                    return new Color(1f, 0.95f, 0.25f, 1f);
-                case TILE.TileInspectorType.WorstSanitation:
-                    return new Color(0.92f, 0.2f, 0.2f, 1f);
-                default:
-                    return Color.white;
-            }
+            float t = maxScore <= 1
+                ? 1f
+                : Mathf.InverseLerp(1f, maxScore, currentScore);
+
+            return hoverScoreUpwardGradient != null
+                ? hoverScoreUpwardGradient.Evaluate(Mathf.Clamp01(t))
+                : hoverScoreFlatColor;
         }
 
         private void FreezeHoverScorePreview(IReadOnlyList<Vector2Int> path)
@@ -1542,11 +1643,12 @@ namespace projectsplippy
             frozenHoverScoreColors.Clear();
 
             int[] preview = ComputeHoverScorePreview(path);
+            Color[] previewColors = ComputeHoverScoreColors(path, preview);
 
             for (int i = 0; i < preview.Length; i++)
             {
                 frozenHoverScorePreview.Add(preview[i]);
-                frozenHoverScoreColors.Add(path != null && i < path.Count ? GetScoreColorForCell(path[i]) : Color.white);
+                frozenHoverScoreColors.Add(i < previewColors.Length ? previewColors[i] : hoverScoreFlatColor);
             }
 
             hoverScorePreviewFrozen = true;

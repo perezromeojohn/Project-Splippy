@@ -37,6 +37,19 @@ namespace projectsplippy
         [SerializeField] private Slider torrentFlowSlider;
         [SerializeField] private TMP_Text scoreText;
         [SerializeField] private TMP_Text sanitationSpawnTrackerText;
+        [SerializeField] private TMP_Text torrentModeLabel;
+
+        [Header("Torrent Mode Label")]
+        [SerializeField] private bool showTorrentModeLabel = true;
+        [SerializeField] private string torrentModeLabelText = "TORRENT MODE";
+        [SerializeField, Min(0f)] private float torrentModeLabelHiddenScale = 0f;
+        [SerializeField, Min(0.05f)] private float torrentModeLabelShownScale = 1f;
+        [SerializeField, Min(0.02f)] private float torrentModeLabelTweenDuration = 0.2f;
+        [SerializeField] private Ease torrentModeLabelTweenEase = Ease.OutBack;
+        [SerializeField] private Ease torrentModeLabelHideEase = Ease.InBack;
+        [SerializeField, Min(1f)] private float torrentModeLabelPulseScale = 1.08f;
+        [SerializeField, Min(0.05f)] private float torrentModeLabelPulseDuration = 0.55f;
+        [SerializeField] private Ease torrentModeLabelPulseEase = Ease.InOutSine;
 
         [Header("Preload UI Intro")]
         [SerializeField] private bool enablePreloadHudIntro = true;
@@ -65,6 +78,12 @@ namespace projectsplippy
         private Vector2 cachedScoreAnchoredPosition;
         private bool hasCachedHudPositions;
         private Coroutine preloadHudIntroRoutine;
+        private Tween torrentModeLabelTween;
+        private Tween torrentModeLabelPulseTween;
+        private Vector3 torrentModeLabelBaseScale = Vector3.one;
+        private bool hasCachedTorrentModeLabelScale;
+        private bool torrentModeLabelVisibleStateKnown;
+        private bool torrentModeLabelVisible;
 
         private bool chargePreviewActive;
         private int previewCharge;
@@ -92,6 +111,10 @@ namespace projectsplippy
             torrentTurnsLeft = 0;
             torrentActivatedThisResolution = false;
             CacheTorrentSliderScale();
+            TryAutoAssignTorrentModeLabel();
+            CacheTorrentModeLabelScale();
+            torrentModeLabelVisibleStateKnown = false;
+            UpdateTorrentModeLabelState(IsTorrentActive, immediate: true);
 
             if (torrentFlowSlider != null)
             {
@@ -266,6 +289,8 @@ namespace projectsplippy
                 torrentFlowSlider.maxValue = 1f;
                 torrentFlowSlider.value = 0f;
             }
+
+            UpdateTorrentModeLabelState(false, immediate: true);
 
             if (!enablePreloadHudIntro)
             {
@@ -493,6 +518,8 @@ namespace projectsplippy
 
                 torrentFlowSlider.value = Mathf.Clamp01(normalized);
             }
+
+            UpdateTorrentModeLabelState(IsTorrentActive);
         }
 
         private float GetSliderNormalizedValueForCharge(int charge)
@@ -640,6 +667,190 @@ namespace projectsplippy
 
             torrentSliderBaseScale = torrentFlowSlider.transform.localScale;
             hasCachedTorrentSliderScale = true;
+        }
+
+        private void TryAutoAssignTorrentModeLabel()
+        {
+            if (torrentModeLabel != null)
+            {
+                return;
+            }
+
+            TMP_Text[] labels = Resources.FindObjectsOfTypeAll<TMP_Text>();
+
+            for (int i = 0; i < labels.Length; i++)
+            {
+                TMP_Text candidate = labels[i];
+
+                if (candidate == null || !candidate.gameObject.scene.IsValid())
+                {
+                    continue;
+                }
+
+                string candidateName = candidate.gameObject.name;
+
+                if (!string.IsNullOrEmpty(candidateName) && candidateName.ToLowerInvariant().Contains("torrent"))
+                {
+                    torrentModeLabel = candidate;
+                    break;
+                }
+            }
+        }
+
+        private void CacheTorrentModeLabelScale()
+        {
+            if (torrentModeLabel == null || hasCachedTorrentModeLabelScale)
+            {
+                return;
+            }
+
+            torrentModeLabelBaseScale = torrentModeLabel.transform.localScale;
+            hasCachedTorrentModeLabelScale = true;
+        }
+
+        private void UpdateTorrentModeLabelState(bool shouldShow, bool immediate = false)
+        {
+            TryAutoAssignTorrentModeLabel();
+
+            if (torrentModeLabel == null)
+            {
+                return;
+            }
+
+            CacheTorrentModeLabelScale();
+
+            if (!showTorrentModeLabel)
+            {
+                if (torrentModeLabelTween.isAlive)
+                {
+                    torrentModeLabelTween.Stop();
+                }
+
+                if (torrentModeLabelPulseTween.isAlive)
+                {
+                    torrentModeLabelPulseTween.Stop();
+                }
+
+                torrentModeLabel.gameObject.SetActive(false);
+                torrentModeLabelVisible = false;
+                torrentModeLabelVisibleStateKnown = true;
+                return;
+            }
+
+            if (!torrentModeLabelVisibleStateKnown)
+            {
+                torrentModeLabelVisibleStateKnown = true;
+                torrentModeLabelVisible = shouldShow;
+                PlayTorrentModeLabelTransition(shouldShow, immediate: true);
+                return;
+            }
+
+            if (!immediate && torrentModeLabelVisible == shouldShow)
+            {
+                if (shouldShow)
+                {
+                    StartTorrentModeLabelPulse();
+                }
+
+                return;
+            }
+
+            torrentModeLabelVisible = shouldShow;
+            PlayTorrentModeLabelTransition(shouldShow, immediate);
+        }
+
+        private void PlayTorrentModeLabelTransition(bool shouldShow, bool immediate)
+        {
+            if (torrentModeLabel == null)
+            {
+                return;
+            }
+
+            if (torrentModeLabelTween.isAlive)
+            {
+                torrentModeLabelTween.Stop();
+            }
+
+            if (torrentModeLabelPulseTween.isAlive)
+            {
+                torrentModeLabelPulseTween.Stop();
+            }
+
+            Transform labelTransform = torrentModeLabel.transform;
+            Vector3 hiddenScale = torrentModeLabelBaseScale * Mathf.Max(0f, torrentModeLabelHiddenScale);
+            Vector3 shownScale = torrentModeLabelBaseScale * Mathf.Max(0.05f, torrentModeLabelShownScale);
+
+            if (shouldShow)
+            {
+                if (!string.IsNullOrWhiteSpace(torrentModeLabelText))
+                {
+                    torrentModeLabel.text = torrentModeLabelText;
+                }
+
+                torrentModeLabel.gameObject.SetActive(true);
+
+                if (immediate)
+                {
+                    labelTransform.localScale = shownScale;
+                    StartTorrentModeLabelPulse();
+                    return;
+                }
+
+                labelTransform.localScale = hiddenScale;
+                float duration = Mathf.Max(0.02f, torrentModeLabelTweenDuration);
+                torrentModeLabelTween = Tween.Scale(labelTransform, shownScale, duration, torrentModeLabelTweenEase)
+                    .OnComplete(StartTorrentModeLabelPulse);
+                return;
+            }
+
+            if (immediate)
+            {
+                labelTransform.localScale = hiddenScale;
+                torrentModeLabel.gameObject.SetActive(false);
+                return;
+            }
+
+            if (!torrentModeLabel.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            float hideDuration = Mathf.Max(0.02f, torrentModeLabelTweenDuration);
+            torrentModeLabelTween = Tween.Scale(labelTransform, hiddenScale, hideDuration, torrentModeLabelHideEase)
+                .OnComplete(() =>
+                {
+                    if (torrentModeLabel != null)
+                    {
+                        torrentModeLabel.gameObject.SetActive(false);
+                    }
+                });
+        }
+
+        private void StartTorrentModeLabelPulse()
+        {
+            if (torrentModeLabel == null || !torrentModeLabel.gameObject.activeSelf)
+            {
+                return;
+            }
+
+            if (torrentModeLabelPulseTween.isAlive)
+            {
+                torrentModeLabelPulseTween.Stop();
+            }
+
+            Transform labelTransform = torrentModeLabel.transform;
+            Vector3 shownScale = torrentModeLabelBaseScale * Mathf.Max(0.05f, torrentModeLabelShownScale);
+            float pulseScaleMultiplier = Mathf.Max(1f, torrentModeLabelPulseScale);
+            Vector3 pulseScale = shownScale * pulseScaleMultiplier;
+
+            labelTransform.localScale = shownScale;
+            torrentModeLabelPulseTween = Tween.Scale(
+                labelTransform,
+                pulseScale,
+                Mathf.Max(0.05f, torrentModeLabelPulseDuration),
+                torrentModeLabelPulseEase,
+                cycles: -1,
+                cycleMode: CycleMode.Yoyo);
         }
     }
 }
