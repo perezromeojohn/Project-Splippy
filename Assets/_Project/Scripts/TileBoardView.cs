@@ -127,6 +127,7 @@ namespace projectsplippy
 
         private int gridSize;
         private float cellSize;
+        private float cellPadding;
         private Vector3 gridCenter;
 
         private void OnValidate()
@@ -169,9 +170,9 @@ namespace projectsplippy
             });
         }
 
-        public void BuildBoard(int gridSize, float cellSize, Vector3 gridCenter, TileBoardSystem boardSystem)
+        public void BuildBoard(int gridSize, float cellSize, Vector3 gridCenter, TileBoardSystem boardSystem, float cellPadding = 0f)
         {
-            BuildBoard(gridSize, cellSize, gridCenter, boardSystem, null, null);
+            BuildBoard(gridSize, cellSize, gridCenter, boardSystem, null, null, cellPadding);
         }
 
         public void BuildBoard(
@@ -180,10 +181,12 @@ namespace projectsplippy
             Vector3 gridCenter,
             TileBoardSystem boardSystem,
             HashSet<Vector2Int> includedCells,
-            Dictionary<Vector2Int, GameObject> cellPrefabOverrides)
+            Dictionary<Vector2Int, GameObject> cellPrefabOverrides,
+            float cellPadding = 0f)
         {
             this.gridSize = gridSize;
             this.cellSize = Mathf.Max(0.1f, cellSize);
+            this.cellPadding = Mathf.Max(0f, cellPadding);
             this.gridCenter = gridCenter;
 
             CachePrefabs();
@@ -1499,8 +1502,9 @@ namespace projectsplippy
         private Vector3 CellToWorld(Vector2Int cell)
         {
             float halfSpan = (gridSize - 1) * 0.5f;
-            float worldX = (cell.x - halfSpan) * cellSize;
-            float worldZ = (cell.y - halfSpan) * cellSize;
+            float stride = cellSize + cellPadding;
+            float worldX = (cell.x - halfSpan) * stride;
+            float worldZ = (cell.y - halfSpan) * stride;
             return gridCenter + new Vector3(worldX, 0f, worldZ);
         }
     }

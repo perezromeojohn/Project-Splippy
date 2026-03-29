@@ -771,8 +771,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: 'Slippy Water: 10/10'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 4a48eff3c5b996c4ca582f3f06ac81e2, type: 2}
-  m_sharedMaterial: {fileID: -3871931118573959448, guid: 4a48eff3c5b996c4ca582f3f06ac81e2, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 4197417a9656a1947b7b79f05653c04b, type: 2}
+  m_sharedMaterial: {fileID: 8305945045892350317, guid: 4197417a9656a1947b7b79f05653c04b, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -1293,6 +1293,7 @@ MonoBehaviour:
   preGameFlow: {fileID: 1704545736}
   gridSize: 7
   cellSize: 1
+  tilePadding: 0.1
   gridOrigin: {x: 0, y: 0, z: 0}
   inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   playerMapName: Player
@@ -1710,7 +1711,7 @@ MonoBehaviour:
   - type: 2
     prefab: {fileID: 1044896772897023657, guid: e064efa9fe4dfb54aa6a2a835e057e0c, type: 3}
   - type: 3
-    prefab: {fileID: 4300521981809138703, guid: c369398b1d977e24e9f1f8684558d172, type: 3}
+    prefab: {fileID: 8294655559294444476, guid: f78046e6f5f001a419ac5adadcb2330f, type: 3}
   - type: 4
     prefab: {fileID: 8294655559294444476, guid: 34210a06588416d498d8508409531e79, type: 3}
   - type: 6
@@ -1824,8 +1825,8 @@ MonoBehaviour:
       m_Calls: []
   m_text: 'Score: 56'
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: 4a48eff3c5b996c4ca582f3f06ac81e2, type: 2}
-  m_sharedMaterial: {fileID: -3871931118573959448, guid: 4a48eff3c5b996c4ca582f3f06ac81e2, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 4197417a9656a1947b7b79f05653c04b, type: 2}
+  m_sharedMaterial: {fileID: 8305945045892350317, guid: 4197417a9656a1947b7b79f05653c04b, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
   m_fontMaterials: []
@@ -3238,7 +3239,7 @@ MonoBehaviour:
       m_Calls: []
   m_text: -- Click anywhere to start --
   m_isRightToLeft: 0
-  m_fontAsset: {fileID: 11400000, guid: da6daea826b349c42a0c8a5736d724a9, type: 2}
+  m_fontAsset: {fileID: 11400000, guid: 81e08c1b0861813498185879c8109815, type: 2}
   m_sharedMaterial: {fileID: 6313406948585705271, guid: da6daea826b349c42a0c8a5736d724a9, type: 2}
   m_fontSharedMaterials: []
   m_fontMaterial: {fileID: 0}
@@ -3305,7 +3306,7 @@ MonoBehaviour:
   m_margin: {x: 0, y: 0, z: 0, w: 0}
   m_isUsingLegacyAnimationComponent: 0
   m_isVolumetricText: 0
-  m_hasFontAssetChanged: 0
+  m_hasFontAssetChanged: 1
   m_baseMaterial: {fileID: 0}
   m_maskOffset: {x: 0, y: 0, z: 0, w: 0}
 --- !u!222 &1462837544
@@ -4042,7 +4043,7 @@ MonoBehaviour:
   outerLobbyTileSinkDuration: 0.45
   outerLobbyTileSinkEase: 8
   tweenCameraOnCenterTrigger: 1
-  centerTriggerCameraPosition: {x: 0, y: 7.54, z: -3.14}
+  centerTriggerCameraPosition: {x: 0, y: 8.29, z: -3.37}
   centerTriggerCameraEuler: {x: 70, y: 0, z: 0}
   cameraTweenEase: 4
   bloomRingStepDelay: 0.18

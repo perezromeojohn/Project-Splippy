@@ -24,6 +24,7 @@ namespace projectsplippy
         [Header("Grid")]
         [SerializeField] private int gridSize = 7;
         [SerializeField] private float cellSize = 1f;
+        [SerializeField, Min(0f)] private float tilePadding = 0.08f;
         [SerializeField] private Vector3 gridOrigin = Vector3.zero;
 
         [Header("Input")]
@@ -129,6 +130,7 @@ namespace projectsplippy
 
             gridSize = Mathf.Max(1, gridSize);
             cellSize = Mathf.Max(0.1f, cellSize);
+            tilePadding = Mathf.Max(0f, tilePadding);
             tileRules = ResolveTileRules(tileRules);
             currentCell = new Vector2Int(gridSize / 2, gridSize / 2);
             ResetGameplayPath();
@@ -448,7 +450,7 @@ namespace projectsplippy
             }
 
             tileBoardSystem.ApplyLobbyMask(walkableCells);
-            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs);
+            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs, tilePadding);
             boardView.RefreshProgressVisuals(tileBoardSystem);
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);
@@ -575,7 +577,7 @@ namespace projectsplippy
         private void StartGameplayImmediate()
         {
             tileBoardSystem.InitializeBoard(currentCell);
-            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem);
+            boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, tilePadding);
             runState.Initialize();
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);
@@ -643,9 +645,10 @@ namespace projectsplippy
             Vector3 worldHit = ray.GetPoint(enter);
             Vector3 local = worldHit - gridCenter;
             float halfSpan = (gridSize - 1) * 0.5f;
+            float stride = cellSize + tilePadding;
 
-            int x = Mathf.RoundToInt((local.x / cellSize) + halfSpan);
-            int y = Mathf.RoundToInt((local.z / cellSize) + halfSpan);
+            int x = Mathf.RoundToInt((local.x / stride) + halfSpan);
+            int y = Mathf.RoundToInt((local.z / stride) + halfSpan);
 
             cell = new Vector2Int(x, y);
 
@@ -925,8 +928,9 @@ namespace projectsplippy
         private Vector3 CellToWorld(Vector2Int cell)
         {
             float halfSpan = (gridSize - 1) * 0.5f;
-            float worldX = (cell.x - halfSpan) * cellSize;
-            float worldZ = (cell.y - halfSpan) * cellSize;
+            float stride = cellSize + tilePadding;
+            float worldX = (cell.x - halfSpan) * stride;
+            float worldZ = (cell.y - halfSpan) * stride;
             return GetGridCenterWorld() + new Vector3(worldX, 0f, worldZ);
         }
 
@@ -1181,14 +1185,15 @@ namespace projectsplippy
         {
             Gizmos.color = new Color(0.2f, 0.8f, 1f, 1f);
             float halfSpan = (gridSize - 1) * 0.5f;
+            float stride = cellSize + tilePadding;
             Vector3 gridCenter = GetGridCenterWorld();
 
             for (int x = 0; x < gridSize; x++)
             {
                 for (int y = 0; y < gridSize; y++)
                 {
-                    float worldX = (x - halfSpan) * cellSize;
-                    float worldZ = (y - halfSpan) * cellSize;
+                    float worldX = (x - halfSpan) * stride;
+                    float worldZ = (y - halfSpan) * stride;
                     Vector3 center = gridCenter + new Vector3(worldX, 0f, worldZ);
                     Gizmos.DrawWireCube(center, new Vector3(cellSize, 0.02f, cellSize));
                 }
