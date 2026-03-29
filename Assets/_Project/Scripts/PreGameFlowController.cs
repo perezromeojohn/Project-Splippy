@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using UnityEngine;
 
 namespace projectsplippy
@@ -15,6 +16,7 @@ namespace projectsplippy
         [SerializeField] private float bloomRingStepDelay = 0.18f;
         [SerializeField] private int countdownStart = 3;
 
+        public MainMenuAnimator mainMenuAnimator;
         private GameManager gameManager;
         private Vector2Int settingsCell;
         private Vector2Int creditsCell;
@@ -26,6 +28,7 @@ namespace projectsplippy
             gameManager = manager;
             startSequenceRunning = false;
             BuildLobbyBoard();
+            mainMenuAnimator.OnEntry();
         }
 
         public void HandleLobbyLanding(Vector2Int cell)
