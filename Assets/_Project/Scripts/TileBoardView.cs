@@ -157,6 +157,7 @@ namespace projectsplippy
         private bool hoverScorePreviewFrozen;
         private int hoverPreviewConsumeVersion;
         private Vector3 currentInteractorPosition;
+        private int lastTileSwapSfxFrame = -1;
 
         private static readonly int InkColorProperty = Shader.PropertyToID("_InkColor");
         private static readonly int ModeProperty = Shader.PropertyToID("_Mode");
@@ -1852,7 +1853,20 @@ namespace projectsplippy
         private void PlayTileSwapSfx()
         {
             TryAutoAssignTileSwapAudioSource();
-            PlayAudioSourceClip(tileSwapAudioSource);
+
+            if (tileSwapAudioSource == null)
+            {
+                return;
+            }
+
+            // Multiple tiles can flip in the same frame; gate to one playback to avoid harsh stacking.
+            if (lastTileSwapSfxFrame == Time.frameCount)
+            {
+                return;
+            }
+
+            lastTileSwapSfxFrame = Time.frameCount;
+            PlayAudioSourceClipNoOverlap(tileSwapAudioSource);
         }
 
         private void TryAutoAssignTileSwapAudioSource()
@@ -1865,7 +1879,7 @@ namespace projectsplippy
             tileSwapAudioSource = FindSceneAudioSourceByNames(new[] { "Tileswap", "TileSwap" });
         }
 
-        private static void PlayAudioSourceClip(AudioSource source)
+        private static void PlayAudioSourceClipNoOverlap(AudioSource source)
         {
             if (source == null)
             {
@@ -1874,7 +1888,11 @@ namespace projectsplippy
 
             if (source.clip != null)
             {
-                source.PlayOneShot(source.clip);
+                if (!source.isPlaying)
+                {
+                    source.Play();
+                }
+
                 return;
             }
 
