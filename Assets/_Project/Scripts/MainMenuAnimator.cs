@@ -14,7 +14,12 @@ namespace projectsplippy
         [SerializeField] private string actionMapName = "Player";
         [SerializeField] private string tapActionName = "MoveTowards";
 
+        [Header("State")]
+        [SerializeField] private bool allowSplippyTapMove;
+
         private InputAction tapAction;
+
+        public bool AllowSplippyTapMove => allowSplippyTapMove;
 
         private static readonly int CanClickHash = Animator.StringToHash("canClick");
         private static readonly int HasClickedHash = Animator.StringToHash("hasClicked");
@@ -98,6 +103,8 @@ namespace projectsplippy
 
         public void OnExitFinished()
         {
+            allowSplippyTapMove = true;
+
             if (mainMenuPanel != null)
             {
                 mainMenuPanel.SetActive(false);
@@ -118,6 +125,8 @@ namespace projectsplippy
 
         public void OnEntry()
         {
+            allowSplippyTapMove = false;
+
             if (mainMenuPanel != null)
             {
                 mainMenuPanel.SetActive(true);
@@ -125,6 +134,7 @@ namespace projectsplippy
 
             if (mainMenuAnimator != null)
             {
+                mainMenuAnimator.SetBool(CanClickHash, false);
                 mainMenuAnimator.SetBool(HasClickedHash, false);
             }
         }

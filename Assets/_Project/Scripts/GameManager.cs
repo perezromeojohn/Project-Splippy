@@ -45,6 +45,7 @@ namespace projectsplippy
 
         [Header("Player")]
         [SerializeField] private Transform splippy;
+        [SerializeField] private GameObject splippyHopAudioSource;
         [SerializeField] private float moveDurationPerCell = 0.12f;
         [SerializeField] private float splippyHeightOffset = 0.6f;
         [SerializeField] private float hopHeight = 0.3f;
@@ -54,17 +55,28 @@ namespace projectsplippy
         [SerializeField] private float splippySquashAmount = 0.14f;
         [SerializeField] private float landingSettleDuration = 0.06f;
         [SerializeField] private Ease landingSettleEase = Ease.OutBack;
+        [SerializeField] private bool faceSplippyToMovement = true;
+        [SerializeField] private float splippyTurnDuration = 0.08f;
+        [SerializeField] private Ease splippyTurnEase = Ease.OutSine;
+        [SerializeField] private bool enableSplippyIdleSquash = true;
+        [SerializeField, Range(0f, 0.45f)] private float splippyIdleSquashAmount = 0.14f;
+        [SerializeField] private float splippyIdleSquashHalfDuration = 0.32f;
+        [SerializeField] private Ease splippyIdleSquashEase = Ease.InOutSine;
 
         private Camera mainCamera;
         private InputAction moveTowardsAction;
         private TileBoardSystem tileBoardSystem;
         private readonly List<TileStepResult> deferredPathStepResults = new List<TileStepResult>();
         private readonly List<Vector2Int> authoredGameplayPath = new List<Vector2Int>();
+        private readonly HashSet<Vector2Int> lobbyWalkableCells = new HashSet<Vector2Int>();
 
         private Vector2Int currentCell;
         private bool isMoving;
         private bool suppressGameplayClick;
         private Vector3 splippyBaseScale = Vector3.one;
+        private Tween splippyRotationTween;
+        private Tween splippyIdleSquashTween;
+        private bool splippyIdleSquashLoopActive;
         private GamePhase currentPhase = GamePhase.Gameplay;
 
         public int GridSize => gridSize;
@@ -143,6 +155,12 @@ namespace projectsplippy
         {
             moveTowardsAction?.Disable();
             boardView?.ClearHoverPathPreview();
+            StopSplippyIdleSquash(resetScale: false);
+
+            if (splippyRotationTween.isAlive)
+            {
+                splippyRotationTween.Stop();
+            }
         }
 
         private void Update()
@@ -167,6 +185,12 @@ namespace projectsplippy
 
             if (currentPhase == GamePhase.Gameplay && runState != null && runState.IsGameOver)
             {
+                return;
+            }
+
+            if (currentPhase == GamePhase.Lobby && preGameFlow != null && !preGameFlow.CanAcceptLobbyMoveInput)
+            {
+                boardView.ClearHoverPathPreview();
                 return;
             }
 
@@ -339,7 +363,7 @@ namespace projectsplippy
                 return;
             }
 
-            if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, hoveredCell, IsCellWalkable, out List<Vector2Int> previewPath) || previewPath.Count <= 1)
+            if (!TryFindMovementPath(currentCell, hoveredCell, out List<Vector2Int> previewPath) || previewPath.Count <= 1)
             {
                 boardView.ClearHoverPathPreview();
                 return;
@@ -382,6 +406,7 @@ namespace projectsplippy
 
             var path = new List<Vector2Int>(authoredGameplayPath);
             deferredPathStepResults.Clear();
+            StopSplippyIdleSquash(resetScale: true);
             isMoving = true;
 
             // Keep preview visible and consume it step-by-step while moving.
@@ -412,12 +437,32 @@ namespace projectsplippy
             currentCell = playerStartCell;
             ResetGameplayPath();
             suppressGameplayClick = false;
+            lobbyWalkableCells.Clear();
+
+            if (walkableCells != null)
+            {
+                foreach (Vector2Int cell in walkableCells)
+                {
+                    lobbyWalkableCells.Add(cell);
+                }
+            }
 
             tileBoardSystem.ApplyLobbyMask(walkableCells);
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, walkableCells, specialPrefabs);
             boardView.RefreshProgressVisuals(tileBoardSystem);
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);
+            StartSplippyIdleSquashIfReady();
+        }
+
+        public IEnumerator TweenAndRemoveLobbyCells(IReadOnlyList<Vector2Int> cells, float sinkDistance, float duration, Ease sinkEase)
+        {
+            if (boardView == null || cells == null || cells.Count == 0)
+            {
+                yield break;
+            }
+
+            yield return StartCoroutine(boardView.TweenAndRemoveCells(cells, sinkDistance, duration, sinkEase));
         }
 
         public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
@@ -426,10 +471,7 @@ namespace projectsplippy
 
             tileBoardSystem.InitializeBoard(currentCell);
             Vector2Int center = CenterCell;
-            int maxDistance = Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - 0);
-            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - (gridSize - 1)));
-            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - (gridSize - 1)));
-            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - 0));
+            int maxDistance = GetBloomRevealMaxDistance();
 
             float delay = Mathf.Max(0.01f, ringStepDelay);
 
@@ -493,6 +535,28 @@ namespace projectsplippy
             boardView.RefreshProgressVisuals(tileBoardSystem);
         }
 
+        public float GetBloomRevealDuration(float ringStepDelay)
+        {
+            int maxDistance = GetBloomRevealMaxDistance();
+
+            if (maxDistance <= 0)
+            {
+                return 0f;
+            }
+
+            return Mathf.Max(0.01f, ringStepDelay) * maxDistance;
+        }
+
+        private int GetBloomRevealMaxDistance()
+        {
+            Vector2Int center = CenterCell;
+            int maxDistance = Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - 0);
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - (gridSize - 1)));
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - 0) + Mathf.Abs(center.y - (gridSize - 1)));
+            maxDistance = Mathf.Max(maxDistance, Mathf.Abs(center.x - (gridSize - 1)) + Mathf.Abs(center.y - 0));
+            return maxDistance;
+        }
+
         public void BeginCountdownPhase()
         {
             currentPhase = GamePhase.Countdown;
@@ -505,6 +569,7 @@ namespace projectsplippy
             boardView.RefreshProgressVisuals(tileBoardSystem);
             ResetGameplayPath();
             suppressGameplayClick = false;
+            StartSplippyIdleSquashIfReady();
         }
 
         private void StartGameplayImmediate()
@@ -517,6 +582,7 @@ namespace projectsplippy
             currentPhase = GamePhase.Gameplay;
             ResetGameplayPath();
             suppressGameplayClick = false;
+            StartSplippyIdleSquashIfReady();
         }
 
         private void SetupInput()
@@ -581,18 +647,24 @@ namespace projectsplippy
             int x = Mathf.RoundToInt((local.x / cellSize) + halfSpan);
             int y = Mathf.RoundToInt((local.z / cellSize) + halfSpan);
 
+            cell = new Vector2Int(x, y);
+
+            if (currentPhase == GamePhase.Lobby && lobbyWalkableCells.Count > 0)
+            {
+                return lobbyWalkableCells.Contains(cell);
+            }
+
             if (!IsInBounds(x, y))
             {
                 return false;
             }
 
-            cell = new Vector2Int(x, y);
             return true;
         }
 
         private void MoveToCell(Vector2Int targetCell)
         {
-            if (!GridPathfinder.TryFindPathBfs(gridSize, currentCell, targetCell, IsCellWalkable, out List<Vector2Int> path))
+            if (!TryFindMovementPath(currentCell, targetCell, out List<Vector2Int> path))
             {
                 return;
             }
@@ -603,6 +675,7 @@ namespace projectsplippy
             }
 
             deferredPathStepResults.Clear();
+            StopSplippyIdleSquash(resetScale: true);
             isMoving = true;
             boardView.ShowHoverPathPreviewImmediateFrozen(path);
             MoveAlongPath(path, 1, path.Count - 1);
@@ -621,12 +694,14 @@ namespace projectsplippy
 
                 suppressGameplayClick = false;
                 isMoving = false;
+                StartSplippyIdleSquashIfReady();
                 return;
             }
 
             Vector2Int nextCell = path[index];
             Vector3 start = splippy.position;
             Vector3 end = CellToWorldForSplippy(nextCell);
+            FaceSplippyTowards(end - start);
             Vector3 apex = Vector3.Lerp(start, end, 0.5f);
             apex.y = Mathf.Max(start.y, end.y) + hopHeight;
 
@@ -650,6 +725,14 @@ namespace projectsplippy
                         {
                             currentCell = nextCell;
                             UpdateRemainingMovementPreview(path, index);
+                            if (splippyHopAudioSource != null)
+                            {
+                                GameObject hopSfx = Instantiate(splippyHopAudioSource, splippy.position, Quaternion.identity);
+                                AudioSource hopAudioSource = hopSfx.GetComponent<AudioSource>();
+                                hopAudioSource.pitch = 1f + ((authoredGameplayPath.Count - 1) * 0.06f);
+                                hopAudioSource.Play();
+                                Destroy(hopSfx, hopAudioSource.clip.length / hopAudioSource.pitch);
+                            }
 
                             if (currentPhase == GamePhase.Lobby)
                             {
@@ -675,6 +758,7 @@ namespace projectsplippy
                             if (runState != null && runState.IsGameOver)
                             {
                                 isMoving = false;
+                                StartSplippyIdleSquashIfReady();
                                 return;
                             }
 
@@ -740,7 +824,97 @@ namespace projectsplippy
 
         private bool IsCellWalkable(Vector2Int cell)
         {
+            if (currentPhase == GamePhase.Lobby && lobbyWalkableCells.Count > 0)
+            {
+                return lobbyWalkableCells.Contains(cell);
+            }
+
             return IsInBounds(cell.x, cell.y) && tileBoardSystem != null && tileBoardSystem.IsWalkable(cell);
+        }
+
+        private bool TryFindMovementPath(Vector2Int start, Vector2Int goal, out List<Vector2Int> path)
+        {
+            if (currentPhase == GamePhase.Lobby && lobbyWalkableCells.Count > 0)
+            {
+                return TryFindLobbyPathBfs(start, goal, out path);
+            }
+
+            return GridPathfinder.TryFindPathBfs(gridSize, start, goal, IsCellWalkable, out path);
+        }
+
+        private bool TryFindLobbyPathBfs(Vector2Int start, Vector2Int goal, out List<Vector2Int> path)
+        {
+            path = null;
+
+            if (!lobbyWalkableCells.Contains(start) || !lobbyWalkableCells.Contains(goal))
+            {
+                return false;
+            }
+
+            if (start == goal)
+            {
+                path = new List<Vector2Int> { start };
+                return true;
+            }
+
+            var visited = new HashSet<Vector2Int> { start };
+            var cameFrom = new Dictionary<Vector2Int, Vector2Int>();
+            var frontier = new Queue<Vector2Int>();
+            frontier.Enqueue(start);
+
+            Vector2Int[] directions =
+            {
+                new Vector2Int(1, 0),
+                new Vector2Int(-1, 0),
+                new Vector2Int(0, 1),
+                new Vector2Int(0, -1)
+            };
+
+            bool found = false;
+
+            while (frontier.Count > 0)
+            {
+                Vector2Int current = frontier.Dequeue();
+
+                for (int i = 0; i < directions.Length; i++)
+                {
+                    Vector2Int next = current + directions[i];
+
+                    if (!lobbyWalkableCells.Contains(next) || !visited.Add(next))
+                    {
+                        continue;
+                    }
+
+                    cameFrom[next] = current;
+
+                    if (next == goal)
+                    {
+                        found = true;
+                        frontier.Clear();
+                        break;
+                    }
+
+                    frontier.Enqueue(next);
+                }
+            }
+
+            if (!found)
+            {
+                return false;
+            }
+
+            path = new List<Vector2Int>();
+            Vector2Int step = goal;
+            path.Add(step);
+
+            while (step != start)
+            {
+                step = cameFrom[step];
+                path.Add(step);
+            }
+
+            path.Reverse();
+            return true;
         }
 
         private bool IsInBounds(int x, int y)
@@ -893,6 +1067,114 @@ namespace projectsplippy
             }
 
             return labels;
+        }
+
+        private void FaceSplippyTowards(Vector3 worldDirection)
+        {
+            if (!faceSplippyToMovement || splippy == null)
+            {
+                return;
+            }
+
+            worldDirection.y = 0f;
+
+            if (worldDirection.sqrMagnitude <= 0.0001f)
+            {
+                return;
+            }
+
+            float targetYaw = GetCardinalYawFromWorldDirection(worldDirection);
+            Quaternion targetRotation = Quaternion.Euler(0f, targetYaw, 0f);
+
+            if (splippyRotationTween.isAlive)
+            {
+                splippyRotationTween.Stop();
+            }
+
+            float duration = Mathf.Max(0f, splippyTurnDuration);
+
+            if (duration <= 0f)
+            {
+                splippy.rotation = targetRotation;
+                return;
+            }
+
+            splippyRotationTween = Tween.Rotation(splippy, targetRotation, duration, splippyTurnEase);
+        }
+
+        private static float GetCardinalYawFromWorldDirection(Vector3 worldDirection)
+        {
+            if (Mathf.Abs(worldDirection.x) >= Mathf.Abs(worldDirection.z))
+            {
+                return worldDirection.x >= 0f ? 0f : 180f;
+            }
+
+            // Grid-up (positive Z) maps to top and grid-down (negative Z) maps to down.
+            return worldDirection.z < 0f ? 90f : -90f;
+        }
+
+        private void StartSplippyIdleSquashIfReady()
+        {
+            if (!enableSplippyIdleSquash || splippy == null || isMoving || !isActiveAndEnabled)
+            {
+                return;
+            }
+
+            if (splippyIdleSquashLoopActive)
+            {
+                return;
+            }
+
+            splippyIdleSquashLoopActive = true;
+            PlaySplippyIdleSquashCycle();
+        }
+
+        private void PlaySplippyIdleSquashCycle()
+        {
+            if (!splippyIdleSquashLoopActive || splippy == null || isMoving)
+            {
+                return;
+            }
+
+            if (splippyIdleSquashTween.isAlive)
+            {
+                splippyIdleSquashTween.Stop();
+            }
+
+            float amount = Mathf.Clamp(splippyIdleSquashAmount, 0f, 0.45f);
+            float halfDuration = Mathf.Max(0.05f, splippyIdleSquashHalfDuration);
+            Vector3 targetScale = new Vector3(
+                splippyBaseScale.x * (1f + amount),
+                splippyBaseScale.y * (1f - amount),
+                splippyBaseScale.z * (1f + amount));
+
+            splippyIdleSquashTween = Tween.Scale(splippy, targetScale, halfDuration, splippyIdleSquashEase, cycles: 2, cycleMode: CycleMode.Yoyo)
+                .OnComplete(() =>
+                {
+                    if (splippyIdleSquashLoopActive && !isMoving && splippy != null && isActiveAndEnabled)
+                    {
+                        PlaySplippyIdleSquashCycle();
+                    }
+                    else if (splippy != null)
+                    {
+                        splippy.localScale = splippyBaseScale;
+                    }
+                });
+        }
+
+        private void StopSplippyIdleSquash(bool resetScale)
+        {
+            splippyIdleSquashLoopActive = false;
+
+            if (splippyIdleSquashTween.isAlive)
+            {
+                splippyIdleSquashTween.Stop();
+            }
+
+            if (resetScale && splippy != null)
+            {
+                splippy.localScale = splippyBaseScale;
+            }
         }
 
         private void OnDrawGizmosSelected()

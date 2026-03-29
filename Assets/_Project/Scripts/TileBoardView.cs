@@ -68,11 +68,6 @@ namespace projectsplippy
 
         public string GetCropVariantLabel(int variantIndex)
         {
-            if (farmlandCropSpriteEntries == null || farmlandCropSpriteEntries.Count == 0)
-            {
-                return "Crop";
-            }
-
             int index = TileGridModel.NormalizeCropVariantIndex(variantIndex, farmlandCropSpriteEntries.Count);
             return farmlandCropSpriteEntries[index].crop.ToString();
         }
@@ -98,6 +93,7 @@ namespace projectsplippy
         [SerializeField] private TMP_FontAsset hoverScorePreviewFont;
         [SerializeField] private float hoverScorePreviewTextSize = 4f;
         [SerializeField] private float hoverScorePreviewYOffset = 0.45f;
+        [SerializeField] private AudioSource hoverPreviewAudioSource;
 
         [Header("Sanitation Timer Label")]
         [SerializeField] private TMP_FontAsset sanitationTurnLabelFont;
@@ -196,17 +192,10 @@ namespace projectsplippy
             ClearExistingGround();
             tileVisuals.Clear();
 
-            for (int x = 0; x < gridSize; x++)
+            if (includedCells != null)
             {
-                for (int y = 0; y < gridSize; y++)
+                foreach (Vector2Int cell in includedCells)
                 {
-                    Vector2Int cell = new Vector2Int(x, y);
-
-                    if (includedCells != null && !includedCells.Contains(cell))
-                    {
-                        continue;
-                    }
-
                     TileType type = boardSystem.GetTileType(cell);
                     GameObject overridePrefab = null;
 
@@ -216,6 +205,25 @@ namespace projectsplippy
                     }
 
                     tileVisuals[cell] = CreateVisual(cell, type, overridePrefab);
+                }
+            }
+            else
+            {
+                for (int x = 0; x < gridSize; x++)
+                {
+                    for (int y = 0; y < gridSize; y++)
+                    {
+                        Vector2Int cell = new Vector2Int(x, y);
+                        TileType type = boardSystem.GetTileType(cell);
+                        GameObject overridePrefab = null;
+
+                        if (cellPrefabOverrides != null)
+                        {
+                            cellPrefabOverrides.TryGetValue(cell, out overridePrefab);
+                        }
+
+                        tileVisuals[cell] = CreateVisual(cell, type, overridePrefab);
+                    }
                 }
             }
 
@@ -258,6 +266,8 @@ namespace projectsplippy
                     marker.SetActive(true);
                     marker.transform.position = markerPosition;
                     marker.transform.localScale = targetScale * hoverPreviewSpawnScale;
+                    // play sound
+                    hoverPreviewAudioSource?.Play();
                 }
 
                 marker.transform.position = Vector3.Lerp(marker.transform.position, markerPosition, posT);
@@ -321,7 +331,7 @@ namespace projectsplippy
             for (int i = nodeCount; i < hoverPreviewMarkers.Count; i++)
             {
                 hoverPreviewMarkers[i].SetActive(false);
-            }
+                hoverPreviewAudioSource?.Play();}
 
             for (int i = 0; i < linkCount; i++)
             {
@@ -468,6 +478,69 @@ namespace projectsplippy
                 {
                     hoverPreviewScoreLabels[i].gameObject.SetActive(false);
                 }
+            }
+        }
+
+        public IEnumerator TweenAndRemoveCells(IReadOnlyList<Vector2Int> cells, float sinkDistance, float duration, Ease sinkEase)
+        {
+            if (cells == null || cells.Count == 0)
+            {
+                yield break;
+            }
+
+            ClearHoverPathPreview();
+
+            float clampedDuration = Mathf.Max(0.01f, duration);
+            float clampedDistance = Mathf.Max(0f, sinkDistance);
+            var removeQueue = new List<Vector2Int>(cells.Count);
+
+            for (int i = 0; i < cells.Count; i++)
+            {
+                Vector2Int cell = cells[i];
+
+                if (!tileVisuals.TryGetValue(cell, out TileVisual visual) || visual.transform == null)
+                {
+                    continue;
+                }
+
+                if (visual.scaleTween.isAlive)
+                {
+                    visual.scaleTween.Stop();
+                }
+
+                if (visual.rotateTween.isAlive)
+                {
+                    visual.rotateTween.Stop();
+                }
+
+                Vector3 targetPosition = visual.transform.position + Vector3.down * clampedDistance;
+                Tween.Position(visual.transform, targetPosition, clampedDuration, sinkEase);
+                Tween.Scale(visual.transform, Vector3.zero, clampedDuration, Ease.InBack);
+                removeQueue.Add(cell);
+            }
+
+            if (removeQueue.Count == 0)
+            {
+                yield break;
+            }
+
+            yield return new WaitForSeconds(clampedDuration);
+
+            for (int i = 0; i < removeQueue.Count; i++)
+            {
+                Vector2Int cell = removeQueue[i];
+
+                if (!tileVisuals.TryGetValue(cell, out TileVisual visual))
+                {
+                    continue;
+                }
+
+                if (visual.transform != null)
+                {
+                    Destroy(visual.transform.gameObject);
+                }
+
+                tileVisuals.Remove(cell);
             }
         }
 

@@ -1,27 +1,38 @@
 using System.Collections;
 using System.Collections.Generic;
-using System.Linq.Expressions;
+using PrimeTween;
 using UnityEngine;
 
 namespace projectsplippy
 {
     public class PreGameFlowController : MonoBehaviour
     {
-        [Header("Special Tile Prefabs")]
-        [SerializeField] private GameObject settingsTilePrefab;
-        [SerializeField] private GameObject creditsTilePrefab;
+        [Header("Center Tile Prefab")]
         [SerializeField] private GameObject startGameTilePrefab;
+        [SerializeField, Min(0)] private int lobbyExtraTilesOutsideLeft = 2;
+
+        [Header("Outside Tile Exit")]
+        [SerializeField] private float outerLobbyTileSinkDistance = 2f;
+        [SerializeField] private float outerLobbyTileSinkDuration = 0.45f;
+        [SerializeField] private Ease outerLobbyTileSinkEase = Ease.InCubic;
+
+        [Header("Camera Tween On Center Trigger")]
+        [SerializeField] private bool tweenCameraOnCenterTrigger = true;
+        [SerializeField] private Vector3 centerTriggerCameraPosition = new Vector3(0f, 7f, -5f);
+        [SerializeField] private Vector3 centerTriggerCameraEuler = new Vector3(60f, 0f, 0f);
+        [SerializeField] private Ease cameraTweenEase = Ease.InOutSine;
 
         [Header("Start Sequence")]
         [SerializeField] private float bloomRingStepDelay = 0.18f;
         [SerializeField] private int countdownStart = 3;
 
         public MainMenuAnimator mainMenuAnimator;
+        public bool CanAcceptLobbyMoveInput => mainMenuAnimator == null || mainMenuAnimator.AllowSplippyTapMove;
         private GameManager gameManager;
-        private Vector2Int settingsCell;
-        private Vector2Int creditsCell;
+        private Vector2Int lineStartCell;
         private Vector2Int startCell;
         private bool startSequenceRunning;
+        private readonly List<Vector2Int> lobbyOuterCells = new List<Vector2Int>();
 
         public void Begin(GameManager manager)
         {
@@ -33,18 +44,6 @@ namespace projectsplippy
 
         public void HandleLobbyLanding(Vector2Int cell)
         {
-            if (cell == settingsCell)
-            {
-                Debug.Log("[Lobby] Settings tile stepped. Open settings menu.");
-                return;
-            }
-
-            if (cell == creditsCell)
-            {
-                Debug.Log("[Lobby] Credits tile stepped. Show credits.");
-                return;
-            }
-
             if (cell == startCell && !startSequenceRunning)
             {
                 StartCoroutine(RunStartSequence());
@@ -57,46 +56,56 @@ namespace projectsplippy
             int centerX = gridSize / 2;
             int centerY = gridSize / 2;
 
-            settingsCell = new Vector2Int(0, 0);
-            creditsCell = new Vector2Int(gridSize - 1, 0);
+            int outsideLeft = Mathf.Max(0, lobbyExtraTilesOutsideLeft);
+            int lineStartX = -outsideLeft;
+            int lineEndX = centerX;
+
+            lineStartCell = new Vector2Int(lineStartX, centerY);
             startCell = new Vector2Int(centerX, centerY);
+            lobbyOuterCells.Clear();
 
             var walkable = new HashSet<Vector2Int>();
 
-            for (int x = 0; x < gridSize; x++)
+            for (int x = lineStartX; x <= lineEndX; x++)
             {
-                walkable.Add(new Vector2Int(x, 0));
-            }
+                Vector2Int cell = new Vector2Int(x, centerY);
+                walkable.Add(cell);
 
-            for (int y = 0; y <= centerY; y++)
-            {
-                walkable.Add(new Vector2Int(centerX, y));
+                if (x < 0 || x >= gridSize)
+                {
+                    lobbyOuterCells.Add(cell);
+                }
             }
 
             var overrides = new Dictionary<Vector2Int, GameObject>();
-
-            if (settingsTilePrefab != null)
-            {
-                overrides[settingsCell] = settingsTilePrefab;
-            }
-
-            if (creditsTilePrefab != null)
-            {
-                overrides[creditsCell] = creditsTilePrefab;
-            }
 
             if (startGameTilePrefab != null)
             {
                 overrides[startCell] = startGameTilePrefab;
             }
 
-            gameManager.ConfigureLobby(walkable, overrides, gameManager.BottomCenterCell);
-            Debug.Log("[Lobby] T-shape ready. Step center tile to start game.");
+            gameManager.ConfigureLobby(walkable, overrides, lineStartCell);
+            Debug.Log($"[Lobby] Line lobby ready (range={lineStartX}-{lineEndX}, outer={lobbyOuterCells.Count}). Step center tile to start game.");
         }
 
         private IEnumerator RunStartSequence()
         {
             startSequenceRunning = true;
+
+            if (lobbyOuterCells.Count > 0)
+            {
+                yield return StartCoroutine(gameManager.TweenAndRemoveLobbyCells(
+                    lobbyOuterCells,
+                    outerLobbyTileSinkDistance,
+                    outerLobbyTileSinkDuration,
+                    outerLobbyTileSinkEase));
+            }
+
+            if (tweenCameraOnCenterTrigger)
+            {
+                StartCameraTweenToCenterTriggerView();
+            }
+
             Debug.Log("[Lobby] Start tile stepped. Bloom reveal started...");
 
             yield return StartCoroutine(gameManager.StartGameplayBloomReveal(bloomRingStepDelay));
@@ -114,6 +123,29 @@ namespace projectsplippy
             Debug.Log("[Countdown] GO");
             gameManager.BeginGameplayPhase();
             startSequenceRunning = false;
+        }
+
+        private void StartCameraTweenToCenterTriggerView()
+        {
+            Camera activeCamera = Camera.main;
+
+            if (activeCamera == null)
+            {
+                return;
+            }
+
+            float duration = gameManager != null ? gameManager.GetBloomRevealDuration(bloomRingStepDelay) : 0f;
+            duration = Mathf.Max(0f, duration);
+            Quaternion targetRotation = Quaternion.Euler(centerTriggerCameraEuler);
+
+            if (duration <= 0f)
+            {
+                activeCamera.transform.SetPositionAndRotation(centerTriggerCameraPosition, targetRotation);
+                return;
+            }
+
+            Tween.Position(activeCamera.transform, centerTriggerCameraPosition, duration, cameraTweenEase);
+            Tween.Rotation(activeCamera.transform, targetRotation, duration, cameraTweenEase);
         }
     }
 }

@@ -24,7 +24,7 @@ Material:
     serializedVersion: 3
     m_TexEnvs:
     - _BaseMap:
-        m_Texture: {fileID: 0}
+        m_Texture: {fileID: 2800000, guid: 8331ee56879871344a514c4e90a810cf, type: 3}
         m_Scale: {x: 1, y: 1}
         m_Offset: {x: 0, y: 0}
     - _GridOutlineOccupancyTex:
@@ -34,12 +34,12 @@ Material:
     m_Ints: []
     m_Floats:
     - _CornerBlend: 0.65
-    - _JitterAmp: 0.0091
+    - _JitterAmp: 0.0122
     - _JitterFreq: 24
     - _JitterSpeed: 12
     - _NeighborFade: 1
     - _OutlineOpacity: 1
-    - _OutlineWidth: 0.114
+    - _OutlineWidth: 0.115
     - _RadialBlend: 1
     - _RadialExtrude: 1
     - _Seed: 5
@@ -48,7 +48,7 @@ Material:
     - _SoftnessPower: 2.4
     - _TopNormalThreshold: 0.642
     m_Colors:
-    - _Color: {r: 0.06666667, g: 0.5294118, b: 0.38823533, a: 1}
-    - _InkColor: {r: 0, g: 0, b: 0, a: 1}
+    - _Color: {r: 1, g: 1, b: 1, a: 1}
+    - _InkColor: {r: 0.3537736, g: 0.6854441, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
