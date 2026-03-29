@@ -23,6 +23,9 @@ namespace projectsplippy
 
         private static readonly int CanClickHash = Animator.StringToHash("canClick");
         private static readonly int HasClickedHash = Animator.StringToHash("hasClicked");
+        private static readonly int RetryGameHash = Animator.StringToHash("retryGame");
+        private static readonly int IsGameOverHash = Animator.StringToHash("isGameOver");
+        private static readonly int CanClickGameOverHash = Animator.StringToHash("canClickGameOver");
 
         private void OnEnable()
         {
@@ -131,12 +134,30 @@ namespace projectsplippy
             {
                 mainMenuPanel.SetActive(true);
             }
-
-            if (mainMenuAnimator != null)
-            {
-                mainMenuAnimator.SetBool(CanClickHash, false);
-                mainMenuAnimator.SetBool(HasClickedHash, false);
-            }
         }
+
+        // game over
+        public void ReloadScene()
+        {
+            UnityEngine.SceneManagement.SceneManager.LoadScene(
+                UnityEngine.SceneManagement.SceneManager.GetActiveScene().buildIndex);
+        }
+
+        public void IsGameOver()
+        {
+            mainMenuAnimator.SetBool(IsGameOverHash, true);
+        }
+
+        public void CanClickGameOver()
+        {
+            mainMenuAnimator.SetBool(CanClickGameOverHash, true);
+        }
+
+        // if clicked then set retryGame bool
+        public void RetryGame()
+        {
+            mainMenuAnimator.SetBool(RetryGameHash, true);
+        }
+
     }
 }
