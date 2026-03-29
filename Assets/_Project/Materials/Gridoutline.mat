@@ -49,6 +49,6 @@ Material:
     - _TopNormalThreshold: 0.642
     m_Colors:
     - _Color: {r: 1, g: 1, b: 1, a: 1}
-    - _InkColor: {r: 0.3537736, g: 0.6854441, b: 1, a: 1}
+    - _InkColor: {r: 0.4, g: 0.80784315, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1

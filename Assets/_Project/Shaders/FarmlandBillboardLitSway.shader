@@ -15,6 +15,8 @@ Shader "ProjectSplippy/FarmlandBillboardLitSway"
         _ColorWobbleAmount("Color Wobble Amount", Range(0,0.2)) = 0.03
         _ColorWobbleSpeed("Color Wobble Speed", Range(0,8)) = 1.3
         _ColorWobbleScale("Color Wobble Scale", Range(0,8)) = 2.0
+        _Brightness("Brightness", Range(0,4)) = 1.0
+        _Contrast("Contrast", Range(0,2)) = 1.0
     }
 
     SubShader
@@ -62,6 +64,8 @@ Shader "ProjectSplippy/FarmlandBillboardLitSway"
                 float _ColorWobbleAmount;
                 float _ColorWobbleSpeed;
                 float _ColorWobbleScale;
+                float _Brightness;
+                float _Contrast;
             CBUFFER_END
 
             TEXTURE2D(_MainTex);
@@ -145,6 +149,8 @@ Shader "ProjectSplippy/FarmlandBillboardLitSway"
                 lit *= wobbleTint;
 
                 lit = MixFog(lit, input.fogFactor);
+                lit = (lit - 0.5) * _Contrast + 0.5;
+                lit *= _Brightness;
                 return half4(lit, texColor.a);
             }
             ENDHLSL
@@ -177,6 +183,8 @@ Shader "ProjectSplippy/FarmlandBillboardLitSway"
                 float _ColorWobbleAmount;
                 float _ColorWobbleSpeed;
                 float _ColorWobbleScale;
+                float _Brightness;
+                float _Contrast;
             CBUFFER_END
 
             TEXTURE2D(_MainTex);
