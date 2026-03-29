@@ -12,6 +12,9 @@ namespace projectsplippy
         [SerializeField, Range(0f, 1f)] private float lowMoveVignetteIntensity = 0.28f;
         [SerializeField] private float vignetteBlendSpeed = 2.5f;
 
+        [Header("Game Over")]
+        [SerializeField, Range(0f, 1f)] private float trashCorruptionGameOverThreshold = 0.7f;
+
         [Header("Torrent Vignette")]
         [SerializeField] private bool enableTorrentBlueVignette = true;
         [SerializeField] private Color torrentVignetteColor = new Color(0.24f, 0.52f, 1f, 1f);
@@ -122,11 +125,59 @@ namespace projectsplippy
                 return;
             }
 
+            if (IsTrashCorruptionGameOver(tileBoardSystem, gridSize))
+            {
+                runState.TriggerSoftLockGameOver();
+                SetLowMoveVignetteActive(true, immediate: true);
+                return;
+            }
+
             if (validNeighborMoves <= 0)
             {
                 runState.TriggerSoftLockGameOver();
                 SetLowMoveVignetteActive(true, immediate: true);
             }
+        }
+
+        private bool IsTrashCorruptionGameOver(TileBoardSystem tileBoardSystem, int gridSize)
+        {
+            float threshold = Mathf.Clamp01(trashCorruptionGameOverThreshold);
+
+            if (threshold <= 0f)
+            {
+                return false;
+            }
+
+            int activeCells = 0;
+            int trashCells = 0;
+
+            for (int x = 0; x < gridSize; x++)
+            {
+                for (int y = 0; y < gridSize; y++)
+                {
+                    TileType type = tileBoardSystem.GetTileType(new Vector2Int(x, y));
+
+                    if (type == TileType.Rock || type == TileType.Filler)
+                    {
+                        continue;
+                    }
+
+                    activeCells++;
+
+                    if (type == TileType.Trash)
+                    {
+                        trashCells++;
+                    }
+                }
+            }
+
+            if (activeCells <= 0)
+            {
+                return false;
+            }
+
+            float trashRatio = (float)trashCells / activeCells;
+            return trashRatio >= threshold;
         }
 
         private int CountValidNeighborMoves(

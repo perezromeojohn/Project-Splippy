@@ -747,6 +747,7 @@ Transform:
   m_Children:
   - {fileID: 1425721257}
   - {fileID: 1670284553}
+  - {fileID: 707052355}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &440976616
@@ -1160,37 +1161,168 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7d93debc62eaa594ca7c8d59cd1d2f56, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.RunStateController
-  startingDroplets: 100
-  maxDroplets: 100
-  clickCost: 15
-  pathTileCost: 1
-  streakIncreaseRefund: 2
-  marineReward: 20
   torrentSliderHopPulseScale: 1.06
   torrentSliderHopPulseDuration: 0.1
   torrentSliderHopPulseEase: 3
   torrentSliderValueTweenDuration: 0.12
-  torrentChargeTarget: 24
+  torrentChargeTarget: 50
   torrentDurationTurns: 3
-  torrentPathRange: 10
-  basePathRange: 7
+  torrentPathRange: 7
+  basePathRange: 5
   torrentScoreMultiplier: 3
   logPathScoreDebug: 1
   torrentFlowSlider: {fileID: 7857259321716821395}
   scoreText: {fileID: 990908597}
   sanitationSpawnTrackerText: {fileID: 0}
   torrentModeLabel: {fileID: 51105593}
+  runStateAudioSource: {fileID: 707052356}
+  gameOverSfx: {fileID: 8300000, guid: ab9342f5ec621f64798e40740c724d76, type: 3}
+  gameOverSfxVolume: 1
+  torrentModeSfx: {fileID: 8300000, guid: 19366ac7f0981fb4b9799ef04d6000f8, type: 3}
+  torrentModeSfxVolume: 1
   showTorrentModeLabel: 1
-  torrentModeLabelText: TORRENT MODE
+  torrentModeLabelText: TORRENT!!
   torrentModeLabelHiddenScale: 0
   torrentModeLabelShownScale: 1
-  torrentModeLabelTweenDuration: 0.2
+  torrentModeLabelTweenDuration: 0.6
   torrentModeLabelTweenEase: 27
   torrentModeLabelHideEase: 26
+  torrentModeLabelPulseScale: 1.08
+  torrentModeLabelPulseDuration: 0.55
+  torrentModeLabelPulseEase: 4
   enablePreloadHudIntro: 1
   preloadSliderYOffset: 50
   preloadScoreYOffset: -50
   preloadHudIntroDuration: 0.45
+--- !u!1 &707052354
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 707052355}
+  - component: {fileID: 707052356}
+  m_Layer: 0
+  m_Name: RunState
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &707052355
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 707052354}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 425742102}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!82 &707052356
+AudioSource:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 707052354}
+  m_Enabled: 1
+  serializedVersion: 4
+  OutputAudioMixerGroup: {fileID: 0}
+  m_audioClip: {fileID: 0}
+  m_Resource: {fileID: 8300000, guid: cc6383a682e6ea449b906e691510a634, type: 3}
+  m_PlayOnAwake: 0
+  m_Volume: 0.8
+  m_Pitch: 1
+  Loop: 0
+  Mute: 0
+  Spatialize: 0
+  SpatializePostEffects: 0
+  Priority: 128
+  DopplerLevel: 1
+  MinDistance: 1
+  MaxDistance: 500
+  Pan2D: 0
+  rolloffMode: 0
+  BypassEffects: 0
+  BypassListenerEffects: 0
+  BypassReverbZones: 0
+  rolloffCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    - serializedVersion: 3
+      time: 1
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  panLevelCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  spreadCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 0
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
+  reverbZoneMixCustomCurve:
+    serializedVersion: 2
+    m_Curve:
+    - serializedVersion: 3
+      time: 0
+      value: 1
+      inSlope: 0
+      outSlope: 0
+      tangentMode: 0
+      weightedMode: 0
+      inWeight: 0.33333334
+      outWeight: 0.33333334
+    m_PreInfinity: 2
+    m_PostInfinity: 2
+    m_RotationOrder: 4
 --- !u!1 &729955185
 GameObject:
   m_ObjectHideFlags: 0
@@ -1249,7 +1381,7 @@ MonoBehaviour:
   inputActions: {fileID: -944628639613478452, guid: 052faaac586de48259a63d0c4782560b, type: 3}
   playerMapName: Player
   moveTowardsActionName: MoveTowards
-  maxGameplayPathRange: 8
+  maxGameplayPathRange: 5
   tileRules:
     sanitationTimeoutTurns: 1
     farmlandCropVariantCount: 0
@@ -1661,6 +1793,37 @@ MonoBehaviour:
   hoverScorePreviewYOffset: 1.5
   hoverScorePreviewSortingOrder: 12
   hoverPreviewAudioSource: {fileID: 1670284554}
+  hoverScoreFlatColor: {r: 1, g: 1, b: 1, a: 1}
+  hoverScoreUpwardGradient:
+    serializedVersion: 2
+    key0: {r: 0.41568628, g: 0.8392157, b: 1, a: 1}
+    key1: {r: 1, g: 0.8392157, b: 0.22745098, a: 1}
+    key2: {r: 0, g: 0, b: 0, a: 0}
+    key3: {r: 0, g: 0, b: 0, a: 0}
+    key4: {r: 0, g: 0, b: 0, a: 0}
+    key5: {r: 0, g: 0, b: 0, a: 0}
+    key6: {r: 0, g: 0, b: 0, a: 0}
+    key7: {r: 0, g: 0, b: 0, a: 0}
+    ctime0: 0
+    ctime1: 65535
+    ctime2: 0
+    ctime3: 0
+    ctime4: 0
+    ctime5: 0
+    ctime6: 0
+    ctime7: 0
+    atime0: 0
+    atime1: 65535
+    atime2: 0
+    atime3: 0
+    atime4: 0
+    atime5: 0
+    atime6: 0
+    atime7: 0
+    m_Mode: 0
+    m_ColorSpace: -1
+    m_NumColorKeys: 2
+    m_NumAlphaKeys: 2
   sanitationTurnLabelFont: {fileID: 11400000, guid: 4197417a9656a1947b7b79f05653c04b, type: 2}
   sanitationTurnLabelSize: 5
   sanitationTurnLabelYOffset: 1
@@ -1991,6 +2154,7 @@ MonoBehaviour:
   lowMoveVignetteThreshold: 1
   lowMoveVignetteIntensity: 0.28
   vignetteBlendSpeed: 2.5
+  trashCorruptionGameOverThreshold: 0.7
   enableTorrentBlueVignette: 1
   torrentVignetteColor: {r: 0.24, g: 0.52, b: 1, a: 1}
   torrentVignetteIntensity: 0.9

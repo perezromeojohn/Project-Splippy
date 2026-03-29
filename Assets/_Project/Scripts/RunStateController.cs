@@ -9,16 +9,6 @@ namespace projectsplippy
 {
     public class RunStateController : MonoBehaviour
     {
-        [Header("Run")]
-        [SerializeField] private int startingDroplets = 100;
-        [SerializeField] private int maxDroplets = 100;
-
-        [Header("Economy")]
-        [SerializeField, Min(0)] private int clickCost = 15;
-        [SerializeField, Min(0)] private int pathTileCost = 1;
-        [SerializeField, Min(0)] private int streakIncreaseRefund = 2;
-        [SerializeField, Min(0)] private int marineReward = 20;
-
         [Header("Torrent")]
         [SerializeField, Min(1f)] private float torrentSliderHopPulseScale = 1.06f;
         [SerializeField, Min(0.02f)] private float torrentSliderHopPulseDuration = 0.1f;
@@ -39,6 +29,13 @@ namespace projectsplippy
         [SerializeField] private TMP_Text sanitationSpawnTrackerText;
         [SerializeField] private TMP_Text torrentModeLabel;
 
+        [Header("Audio")]
+        [SerializeField] private AudioSource runStateAudioSource;
+        [SerializeField] private AudioClip gameOverSfx;
+        [SerializeField, Range(0f, 1f)] private float gameOverSfxVolume = 1f;
+        [SerializeField] private AudioClip torrentModeSfx;
+        [SerializeField, Range(0f, 1f)] private float torrentModeSfxVolume = 1f;
+
         [Header("Torrent Mode Label")]
         [SerializeField] private bool showTorrentModeLabel = true;
         [SerializeField] private string torrentModeLabelText = "TORRENT MODE";
@@ -58,7 +55,6 @@ namespace projectsplippy
         [SerializeField, Min(0.05f)] private float preloadHudIntroDuration = 0.45f;
 
         public bool IsGameOver { get; private set; }
-        public int CurrentWaterReserve { get; private set; }
         public int CurrentScore { get; private set; }
         public bool IsTorrentActive => torrentTurnsLeft > 0;
         public int TorrentTurnsLeft => torrentTurnsLeft;
@@ -92,12 +88,6 @@ namespace projectsplippy
 
         public void Initialize()
         {
-            startingDroplets = Mathf.Max(1, startingDroplets);
-            maxDroplets = Mathf.Max(startingDroplets, maxDroplets);
-            clickCost = Mathf.Max(0, clickCost);
-            pathTileCost = Mathf.Max(0, pathTileCost);
-            streakIncreaseRefund = Mathf.Max(0, streakIncreaseRefund);
-            marineReward = Mathf.Max(0, marineReward);
             torrentChargeTarget = Mathf.Max(1, torrentChargeTarget);
             torrentDurationTurns = Mathf.Max(1, torrentDurationTurns);
             torrentPathRange = Mathf.Max(1, torrentPathRange);
@@ -105,11 +95,11 @@ namespace projectsplippy
             torrentScoreMultiplier = Mathf.Max(1, torrentScoreMultiplier);
 
             IsGameOver = false;
-            CurrentWaterReserve = startingDroplets;
             CurrentScore = 0;
             torrentCharge = 0;
             torrentTurnsLeft = 0;
             torrentActivatedThisResolution = false;
+            TryResolveRunStateAudioSource();
             CacheTorrentSliderScale();
             TryAutoAssignTorrentModeLabel();
             CacheTorrentModeLabelScale();
@@ -146,8 +136,6 @@ namespace projectsplippy
 
             int baseScore = 0;
             int sanitationTouches = 0;
-            int marineTouches = 0;
-            int streakIncreaseEvents = 0;
             int? previousEffectiveCropVariant = null;
             int streakLength = 0;
             int streakChargeGain = 0;
@@ -162,17 +150,7 @@ namespace projectsplippy
                 {
                     sanitationTouches++;
                 }
-
-                if (step.EnteredType == TileType.Marine)
-                {
-                    marineTouches++;
-                }
                 string label = ResolveDebugLabel(step, collisionOrder, i);
-
-                if (awarded > 1)
-                {
-                    streakIncreaseEvents++;
-                }
 
                 baseScore += awarded;
 
@@ -421,6 +399,7 @@ namespace projectsplippy
                 torrentTurnsLeft = torrentDurationTurns;
                 torrentCharge = 0;
                 torrentActivatedThisResolution = true;
+                PlayRunStateSfx(torrentModeSfx, torrentModeSfxVolume);
             }
         }
 
@@ -495,6 +474,7 @@ namespace projectsplippy
             }
 
             IsGameOver = true;
+            PlayRunStateSfx(gameOverSfx, gameOverSfxVolume);
             RefreshHud();
         }
 
@@ -667,6 +647,37 @@ namespace projectsplippy
 
             torrentSliderBaseScale = torrentFlowSlider.transform.localScale;
             hasCachedTorrentSliderScale = true;
+        }
+
+        private void TryResolveRunStateAudioSource()
+        {
+            if (runStateAudioSource != null)
+            {
+                return;
+            }
+
+            runStateAudioSource = GetComponent<AudioSource>();
+        }
+
+        private void PlayRunStateSfx(AudioClip clip, float volume)
+        {
+            if (clip == null)
+            {
+                return;
+            }
+
+            TryResolveRunStateAudioSource();
+            float clampedVolume = Mathf.Clamp01(volume);
+
+            if (runStateAudioSource != null)
+            {
+                runStateAudioSource.PlayOneShot(clip, clampedVolume);
+                return;
+            }
+
+            Camera cam = Camera.main;
+            Vector3 position = cam != null ? cam.transform.position : transform.position;
+            AudioSource.PlayClipAtPoint(clip, position, clampedVolume);
         }
 
         private void TryAutoAssignTorrentModeLabel()
