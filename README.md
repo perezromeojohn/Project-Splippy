@@ -1,4 +1,4 @@
-# Project-Splippy
+# Splippy: Be The Flow!
 A chain-clearing tile puzzler where you don't control the water — you ARE the water.
 
 You are Splippy, a tiny water sprite hopping across a drought-stricken land.
