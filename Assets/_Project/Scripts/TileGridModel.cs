@@ -12,7 +12,8 @@ namespace projectsplippy
         WorstSanitation,
         Marine,
         Rock,
-        Trash
+        Trash,
+        Splash
     }
 
     [System.Serializable]
@@ -105,6 +106,14 @@ namespace projectsplippy
     {
         public MarineTileData(TileRules rules)
             : base(TileType.Marine, rules)
+        {
+        }
+    }
+
+    public sealed class SplashTileData : TileData
+    {
+        public SplashTileData(TileRules rules)
+            : base(TileType.Splash, rules)
         {
         }
     }
@@ -382,6 +391,8 @@ namespace projectsplippy
                     return new WorstSanitationTileData(rules);
                 case TileType.Marine:
                     return new MarineTileData(rules);
+                case TileType.Splash:
+                    return new SplashTileData(rules);
                 case TileType.Rock:
                     return new RockTileData(rules);
                 case TileType.Trash:

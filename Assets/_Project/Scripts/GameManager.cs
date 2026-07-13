@@ -47,7 +47,8 @@ namespace projectsplippy
         [SerializeField, Range(0, 100)] private int ecosystemPercent = 4;
         [SerializeField, Range(0, 100)] private int sanitationPercent = 8;
         [SerializeField, Range(0, 100)] private int worstSanitationPercent = 3;
-        [SerializeField, Range(0, 100)] private int marinePercent = 16;
+        [SerializeField, Range(0, 100)] private int marinePercent = 14;
+        [SerializeField, Range(0, 100)] private int splashPercent = 2;
 
         [Header("Player")]
         [SerializeField] private Transform splippy;
@@ -69,6 +70,7 @@ namespace projectsplippy
         [SerializeField] private float splippyIdleSquashHalfDuration = 0.32f;
         [SerializeField] private Ease splippyIdleSquashEase = Ease.InOutSine;
         [SerializeField, Min(0f)] private float marineFinalDestinationEndTurnDelay = 0.5f;
+        [SerializeField, Min(0f)] private float splashFinalDestinationEndTurnDelay = 0.3f;
 
         private Camera mainCamera;
         private InputAction moveTowardsAction;
@@ -802,8 +804,11 @@ namespace projectsplippy
 
                             if (tileBoardSystem != null)
                             {
-                                bool marineInterrupt = tileBoardSystem.GetTileType(nextCell) == TileType.Marine;
-                                bool advanceTurnDecay = index == finalIndex || marineInterrupt;
+                                TileType nextTileType = tileBoardSystem.GetTileType(nextCell);
+                                bool marineInterrupt = nextTileType == TileType.Marine;
+                                bool splashInterrupt = nextTileType == TileType.Splash;
+                                bool activatorInterrupt = marineInterrupt || splashInterrupt;
+                                bool advanceTurnDecay = index == finalIndex || activatorInterrupt;
                                 IReadOnlyList<Vector2Int> touchedCellsThisTurn = null;
 
                                 if (advanceTurnDecay)
@@ -817,17 +822,20 @@ namespace projectsplippy
                                 boardView.PlayTileLandingFeedback(nextCell);
                                 runState?.PlayHopSliderFeedback();
 
-                                if (marineInterrupt)
+                                if (activatorInterrupt)
                                 {
                                     Tween.Scale(splippy, splippyBaseScale, landingSettleDuration, landingSettleEase);
 
                                     if (index < finalIndex)
                                     {
-                                        StartCoroutine(ResolveMarineInterruptAndContinueRoutine(path, index + 1, finalIndex));
+                                        StartCoroutine(ResolveActivatorInterruptAndContinueRoutine(path, index + 1, finalIndex));
                                     }
                                     else
                                     {
-                                        StartCoroutine(FinalizeGameplayMoveRoutine(marineFinalDestinationEndTurnDelay));
+                                        float delay = splashInterrupt
+                                            ? splashFinalDestinationEndTurnDelay
+                                            : marineFinalDestinationEndTurnDelay;
+                                        StartCoroutine(FinalizeGameplayMoveRoutine(delay));
                                     }
 
                                     return;
@@ -856,7 +864,7 @@ namespace projectsplippy
             CompleteGameplayMove();
         }
 
-        private IEnumerator ResolveMarineInterruptAndContinueRoutine(List<Vector2Int> path, int nextIndex, int finalIndex)
+        private IEnumerator ResolveActivatorInterruptAndContinueRoutine(List<Vector2Int> path, int nextIndex, int finalIndex)
         {
             yield return StartCoroutine(ResolvePostMoveEventsRoutine(applyEndOfTurnSystems: false));
 
@@ -1134,8 +1142,9 @@ namespace projectsplippy
             sanitationPercent = Mathf.Clamp(sanitationPercent, 0, 100);
             worstSanitationPercent = Mathf.Clamp(worstSanitationPercent, 0, 100);
             marinePercent = Mathf.Clamp(marinePercent, 0, 100);
+            splashPercent = Mathf.Clamp(splashPercent, 0, 100);
 
-            int total = farmlandPercent + ecosystemPercent + sanitationPercent + worstSanitationPercent + marinePercent;
+            int total = farmlandPercent + ecosystemPercent + sanitationPercent + worstSanitationPercent + marinePercent + splashPercent;
 
             if (total <= 0)
             {
@@ -1150,7 +1159,8 @@ namespace projectsplippy
                 ecosystemWeight = ecosystemPercent * invTotal,
                 sanitationWeight = sanitationPercent * invTotal,
                 worstSanitationWeight = worstSanitationPercent * invTotal,
-                marineWeight = marinePercent * invTotal
+                marineWeight = marinePercent * invTotal,
+                splashWeight = splashPercent * invTotal
             };
         }
 

@@ -12,6 +12,7 @@ namespace projectsplippy
         public float sanitationWeight;
         public float worstSanitationWeight;
         public float marineWeight;
+        public float splashWeight;
 
         public static TileSpawnWeights Default => new TileSpawnWeights
         {
@@ -19,7 +20,8 @@ namespace projectsplippy
             ecosystemWeight = 0.06f,
             sanitationWeight = 0.08f,
             worstSanitationWeight = 0.03f,
-            marineWeight = 0.14f
+            marineWeight = 0.12f,
+            splashWeight = 0.02f
         };
     }
 
@@ -160,6 +162,29 @@ namespace projectsplippy
             return ResolveMarineCross(center, flipNonHazardsToFarmland: false);
         }
 
+        public Dictionary<Vector2Int, TileType> ClearHazardsInRadius(Vector2Int center, int radius)
+        {
+            var replaced = new Dictionary<Vector2Int, TileType>();
+            int r = Mathf.Max(0, radius);
+
+            for (int x = center.x - r; x <= center.x + r; x++)
+            {
+                for (int y = center.y - r; y <= center.y + r; y++)
+                {
+                    Vector2Int cell = new Vector2Int(x, y);
+
+                    if (cell.x < 0 || cell.x >= gridSize || cell.y < 0 || cell.y >= gridSize)
+                    {
+                        continue;
+                    }
+
+                    TryResolveSplashRadiusCell(cell, replaced);
+                }
+            }
+
+            return replaced;
+        }
+
         public Dictionary<Vector2Int, TileType> ResolveMarineCross(Vector2Int center, bool flipNonHazardsToFarmland = true)
         {
             var replaced = new Dictionary<Vector2Int, TileType>();
@@ -256,6 +281,30 @@ namespace projectsplippy
             replaced[cell] = TileType.Farmland;
         }
 
+        private void TryResolveSplashRadiusCell(
+            Vector2Int cell,
+            Dictionary<Vector2Int, TileType> replaced)
+        {
+            TileType current = model.GetTileType(cell);
+            bool isHazard =
+                current == TileType.Sanitation ||
+                current == TileType.WorstSanitation ||
+                current == TileType.Trash;
+
+            if (!isHazard)
+            {
+                return;
+            }
+
+            if (current == TileType.Rock || current == TileType.Filler)
+            {
+                return;
+            }
+
+            model.SetTileType(cell, TileType.Farmland);
+            replaced[cell] = TileType.Farmland;
+        }
+
         private TileType RollWalkableTileType()
         {
             int safety = 16;
@@ -280,7 +329,8 @@ namespace projectsplippy
                 Mathf.Max(0f, spawnWeights.ecosystemWeight) +
                 Mathf.Max(0f, spawnWeights.sanitationWeight) +
                 Mathf.Max(0f, spawnWeights.worstSanitationWeight) +
-                Mathf.Max(0f, spawnWeights.marineWeight);
+                Mathf.Max(0f, spawnWeights.marineWeight) +
+                Mathf.Max(0f, spawnWeights.splashWeight);
 
             if (total <= 0f)
             {
@@ -313,7 +363,19 @@ namespace projectsplippy
                 return TileType.WorstSanitation;
             }
 
-            return TileType.Marine;
+            roll -= Mathf.Max(0f, spawnWeights.marineWeight);
+            if (roll <= 0f)
+            {
+                return TileType.Marine;
+            }
+
+            roll -= Mathf.Max(0f, spawnWeights.splashWeight);
+            if (roll <= 0f)
+            {
+                return TileType.Splash;
+            }
+
+            return TileType.Farmland;
         }
 
         private float Random01()
@@ -330,7 +392,8 @@ namespace projectsplippy
                 Mathf.Max(0f, weights.ecosystemWeight) +
                 Mathf.Max(0f, weights.sanitationWeight) +
                 Mathf.Max(0f, weights.worstSanitationWeight) +
-                Mathf.Max(0f, weights.marineWeight);
+                Mathf.Max(0f, weights.marineWeight) +
+                Mathf.Max(0f, weights.splashWeight);
 
             if (sum <= 0f)
             {

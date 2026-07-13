@@ -10,12 +10,18 @@ namespace projectsplippy
         [SerializeField] private float marinePauseDuration = 0.14f;
         [SerializeField] private float marineRippleStepDelay = 0.045f;
 
+        [Header("Splash Resolve Timing")]
+        [SerializeField] private float splashPauseDuration = 0.14f;
+        [SerializeField] private float splashRippleStepDelay = 0.045f;
+        [SerializeField, Min(1)] private int splashRadius = 2;
+
         [Header("Audio")]
         [SerializeField] private AudioSource infectionAudioSource;
 
         [Header("Floating Event Text")]
         [SerializeField] private Color torrentTextColor = new Color(0.25f, 0.86f, 1f, 1f);
         [SerializeField] private Color marineTextColor = new Color(0.35f, 0.72f, 1f, 1f);
+        [SerializeField] private Color splashTextColor = new Color(0.3f, 0.85f, 0.95f, 1f);
         [SerializeField] private float torrentTextWorldYOffset = 0.85f;
 
         private void Awake()
@@ -48,6 +54,7 @@ namespace projectsplippy
             bool torrentActivated = runState != null && runState.ConsumeTorrentActivationFlag();
             var traversedCells = new List<Vector2Int>(deferredPathStepResults.Count);
             var marineCenters = new List<Vector2Int>();
+            var splashCenters = new List<Vector2Int>();
             var forceFarmlandCells = new HashSet<Vector2Int>();
             var immediateDecayFlips = new HashSet<Vector2Int>();
 
@@ -70,6 +77,11 @@ namespace projectsplippy
                 if (step.EnteredType == TileType.Marine && !marineCenters.Contains(step.Cell))
                 {
                     marineCenters.Add(step.Cell);
+                }
+
+                if (step.EnteredType == TileType.Splash && !splashCenters.Contains(step.Cell))
+                {
+                    splashCenters.Add(step.Cell);
                 }
 
                 if (step.LandingResult != null)
@@ -135,6 +147,31 @@ namespace projectsplippy
                         boardView,
                         crossVisualFlips,
                         marineCenter));
+                }
+            }
+
+            if (splashCenters.Count > 0)
+            {
+                for (int i = 0; i < splashCenters.Count; i++)
+                {
+                    Vector2Int splashCenter = splashCenters[i];
+                    boardView.PlayFloatingText(splashCenter, "SPLASH!!", splashTextColor);
+
+                    float pause = Mathf.Max(0f, splashPauseDuration);
+
+                    if (pause > 0f)
+                    {
+                        yield return new WaitForSeconds(pause);
+                    }
+
+                    tileBoardSystem.ClearHazardsInRadius(splashCenter, splashRadius);
+                    Dictionary<Vector2Int, TileType> radiusVisualFlips = BuildSplashRadiusVisualFlips(tileBoardSystem, splashCenter, splashRadius);
+
+                    yield return StartCoroutine(PlayReplacementFlipsOutward(
+                        tileBoardSystem,
+                        boardView,
+                        radiusVisualFlips,
+                        splashCenter));
                 }
             }
 
@@ -290,6 +327,39 @@ namespace projectsplippy
             }
 
             flips[cell] = tile.Type;
+        }
+
+        private static Dictionary<Vector2Int, TileType> BuildSplashRadiusVisualFlips(
+            TileBoardSystem tileBoardSystem,
+            Vector2Int center,
+            int radius)
+        {
+            var flips = new Dictionary<Vector2Int, TileType>();
+
+            if (tileBoardSystem == null)
+            {
+                return flips;
+            }
+
+            int gridSize = tileBoardSystem.GridSize;
+            int r = Mathf.Max(0, radius);
+
+            for (int x = center.x - r; x <= center.x + r; x++)
+            {
+                for (int y = center.y - r; y <= center.y + r; y++)
+                {
+                    Vector2Int cell = new Vector2Int(x, y);
+
+                    if (cell.x < 0 || cell.x >= gridSize || cell.y < 0 || cell.y >= gridSize)
+                    {
+                        continue;
+                    }
+
+                    AddCrossVisualFlipForCell(tileBoardSystem, cell, flips);
+                }
+            }
+
+            return flips;
         }
 
         private static List<string> BuildCollisionOrderDebug(IReadOnlyList<TileStepResult> steps, TileBoardView boardView)

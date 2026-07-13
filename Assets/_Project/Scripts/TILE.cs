@@ -13,7 +13,8 @@ namespace projectsplippy
             WorstSanitation,
             Marine,
             Rock,
-            Trash
+            Trash,
+            Splash
         }
 
         public enum FarmlandCropType
@@ -51,6 +52,9 @@ namespace projectsplippy
                     break;
                 case TileType.Marine:
                     tileType = TileInspectorType.Marine;
+                    break;
+                case TileType.Splash:
+                    tileType = TileInspectorType.Splash;
                     break;
                 case TileType.Rock:
                     tileType = TileInspectorType.Rock;
