@@ -20,9 +20,11 @@ namespace projectsplippy
         [SerializeField] private TileBoardView boardView;
         [SerializeField] private RunStateController runState;
         [SerializeField] private PreGameFlowController preGameFlow;
+        [SerializeField] private MainMenuController mainMenuController;
         [SerializeField] private GameplayPressureController gameplayPressureController;
         [SerializeField] private SanitationSpawnController sanitationSpawnController;
         [SerializeField] private PathResolutionController pathResolutionController;
+        [SerializeField] private bool skipPregameSequence = true;
 
         [Header("Grid")]
         [SerializeField] private int gridSize = 7;
@@ -86,6 +88,7 @@ namespace projectsplippy
         private Tween splippyRotationTween;
         private Tween splippyIdleSquashTween;
         private bool splippyIdleSquashLoopActive;
+        private bool awaitingMainMenuPlay;
         private GamePhase currentPhase = GamePhase.Gameplay;
 
         public int GridSize => gridSize;
@@ -120,6 +123,11 @@ namespace projectsplippy
             if (preGameFlow == null)
             {
                 preGameFlow = GetComponent<PreGameFlowController>();
+            }
+
+            if (mainMenuController == null)
+            {
+                mainMenuController = GetComponent<MainMenuController>();
             }
 
             if (gameplayPressureController == null)
@@ -180,7 +188,13 @@ namespace projectsplippy
             gameplayPressureController?.Initialize();
             runState?.PrepareHudForPreload();
 
-            if (preGameFlow != null)
+            awaitingMainMenuPlay = mainMenuController != null && skipPregameSequence;
+
+            if (awaitingMainMenuPlay)
+            {
+                mainMenuController.Show();
+            }
+            else if (preGameFlow != null)
             {
                 preGameFlow.Begin(this);
             }
@@ -210,6 +224,11 @@ namespace projectsplippy
 
         private void Update()
         {
+            if (awaitingMainMenuPlay)
+            {
+                return;
+            }
+
             boardView.UpdateBillboardInteractor(splippy.position);
             gameplayPressureController?.SyncRunStateVisuals(currentPhase, runState);
             gameplayPressureController?.UpdateVignette(Time.deltaTime);
@@ -621,6 +640,20 @@ namespace projectsplippy
             sanitationSpawnController?.ResetTracker(runState);
             gameplayPressureController?.Evaluate(currentPhase, tileBoardSystem, runState, currentCell, gridSize);
             StartSplippyIdleSquashIfReady();
+        }
+
+        public void BeginGameplayFromMenu()
+        {
+            awaitingMainMenuPlay = false;
+
+            if (preGameFlow != null)
+            {
+                preGameFlow.BeginLobby(this);
+            }
+            else
+            {
+                StartGameplayImmediate();
+            }
         }
 
         private void StartGameplayImmediate()

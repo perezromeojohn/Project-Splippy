@@ -27,11 +27,12 @@ namespace projectsplippy
         [SerializeField] private int countdownStart = 3;
 
         public MainMenuAnimator mainMenuAnimator;
-        public bool CanAcceptLobbyMoveInput => mainMenuAnimator == null || mainMenuAnimator.AllowSplippyTapMove;
+        public bool CanAcceptLobbyMoveInput => mainMenuAnimator == null || mainMenuAnimator.AllowSplippyTapMove || lobbyMoveAllowed;
         private GameManager gameManager;
         private Vector2Int lineStartCell;
         private Vector2Int startCell;
         private bool startSequenceRunning;
+        private bool lobbyMoveAllowed;
         private readonly List<Vector2Int> lobbyOuterCells = new List<Vector2Int>();
 
         public void Begin(GameManager manager)
@@ -40,6 +41,14 @@ namespace projectsplippy
             startSequenceRunning = false;
             BuildLobbyBoard();
             mainMenuAnimator.OnEntry();
+        }
+
+        public void BeginLobby(GameManager manager)
+        {
+            gameManager = manager;
+            startSequenceRunning = false;
+            lobbyMoveAllowed = true;
+            BuildLobbyBoard();
         }
 
         public void HandleLobbyLanding(Vector2Int cell)
