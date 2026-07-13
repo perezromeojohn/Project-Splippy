@@ -10,25 +10,26 @@ namespace LayerLab.GUIScripts
 {
     public class PanelControl : MonoBehaviour
     {
-        private int _page;
-        private bool _isReady;
-        private TextMeshProUGUI _textTitle;
-        [SerializeField] private List<GameObject> defaultPanels = new ();
-        [SerializeField] private List<GameObject> otherPanels = new ();
-        
         [SerializeField] private Transform panelTransformDefault;
         [SerializeField] private Transform panelTransformOther;
         [SerializeField] private Button buttonPrev;
         [SerializeField] private Button buttonNext;
 
-        private bool IsOtherMode { get; set; }
+        private readonly List<GameObject> _defaultPanels = new();
+        private readonly List<GameObject> _otherPanels = new();
+        private TextMeshProUGUI _textTitle;
+        private int _page;
+        private bool _isReady;
+        private bool _isOtherMode;
 
+        private bool HasOtherPanels => _otherPanels.Count > 0;
+        private List<GameObject> ActivePanels => _isOtherMode && HasOtherPanels ? _otherPanels : _defaultPanels;
 
         private void OnValidate()
         {
             var panels = GameObject.Find("Panels");
             if (panels) panelTransformDefault = panels.transform;
-            
+
             buttonPrev = transform.GetChild(0).GetComponent<Button>();
             buttonNext = transform.GetChild(2).GetComponent<Button>();
         }
@@ -41,138 +42,71 @@ namespace LayerLab.GUIScripts
         private void Start()
         {
             _textTitle = transform.GetComponentInChildren<TextMeshProUGUI>();
-            buttonPrev.onClick.AddListener(Click_Prev);
-            buttonNext.onClick.AddListener(Click_Next);
+            buttonPrev.onClick.AddListener(() => Navigate(-1));
+            buttonNext.onClick.AddListener(() => Navigate(1));
 
-            foreach (Transform t in panelTransformDefault)
-            {
-                defaultPanels.Add(t.gameObject);
-                t.gameObject.SetActive(false);
-            }
-            defaultPanels[_page].SetActive(true);
-            
-            
-            if(panelTransformOther == null) return;
-            
-            foreach (Transform t in panelTransformOther)
-            {
-                otherPanels.Add(t.gameObject);
-                t.gameObject.SetActive(false);
-            }
-            
-            
-            if (otherPanels.Count > 0) otherPanels[_page].SetActive(true);
+            CollectPanels(panelTransformDefault, _defaultPanels);
 
-            
-            
-            
+            if (panelTransformOther != null)
+                CollectPanels(panelTransformOther, _otherPanels);
+
             _isReady = true;
-            CheckControl();
+            UpdateUI();
         }
 
         private void Update()
         {
-            if (defaultPanels.Count <= 0 || !_isReady) return;
+            if (!_isReady || _defaultPanels.Count <= 0) return;
 
 #if ENABLE_INPUT_SYSTEM
-            if (Keyboard.current.leftArrowKey.wasPressedThisFrame)
-            {
-                Click_Prev();
-            }
-            else if (Keyboard.current.rightArrowKey.wasPressedThisFrame)
-            {
-                Click_Next();
-            }
+            if (Keyboard.current.leftArrowKey.wasPressedThisFrame) Navigate(-1);
+            else if (Keyboard.current.rightArrowKey.wasPressedThisFrame) Navigate(1);
 #else
-            if (Input.GetKeyDown(KeyCode.LeftArrow))
-            {
-                Click_Prev();
-            }
-            else if (Input.GetKeyDown(KeyCode.RightArrow))
-            {
-                Click_Next();
-            }
+            if (Input.GetKeyDown(KeyCode.LeftArrow)) Navigate(-1);
+            else if (Input.GetKeyDown(KeyCode.RightArrow)) Navigate(1);
 #endif
         }
 
-        //Click_Prev
-        //Click_Prev
-        private void Click_Prev()
+        private void Navigate(int direction)
         {
-            if (_page <= 0) return;
+            int nextPage = _page + direction;
+            if (nextPage < 0 || nextPage >= _defaultPanels.Count) return;
 
-            defaultPanels[_page].SetActive(false);
-            if(otherPanels.Count > 0) otherPanels[_page].SetActive(false);
-            _page -= 1;
-            
-            defaultPanels[_page].SetActive(true);
-            if(otherPanels.Count > 0) otherPanels[_page].SetActive(true);
-
-            if (!IsOtherMode)
-            {
-                _textTitle.text = defaultPanels[_page].name;
-            }
-            else
-            {
-                if (otherPanels.Count > 0)
-                {
-                    _textTitle.text = otherPanels[_page].name;
-                }
-            }
-            
-            CheckControl();
+            SetPageActive(false);
+            _page = nextPage;
+            SetPageActive(true);
+            UpdateUI();
         }
 
-        //Click_Next
-        private void Click_Next()
+        private void SetPageActive(bool active)
         {
-            if (_page >= defaultPanels.Count - 1) return;
-            
-            defaultPanels[_page].SetActive(false);
-            if(otherPanels.Count > 0) otherPanels[_page].SetActive(false);
-            _page += 1;
-            
-            defaultPanels[_page].SetActive(true);
-            if(otherPanels.Count > 0) otherPanels[_page].SetActive(true);
-            CheckControl();
+            _defaultPanels[_page].SetActive(active);
+            if (HasOtherPanels) _otherPanels[_page].SetActive(active);
         }
 
-
-        private void SetArrowActive()
+        private void UpdateUI()
         {
+            _textTitle.text = ActivePanels[_page].name.Replace("_", " ");
             buttonPrev.gameObject.SetActive(_page > 0);
-            buttonNext.gameObject.SetActive(_page < defaultPanels.Count - 1);
+            buttonNext.gameObject.SetActive(_page < _defaultPanels.Count - 1);
         }
 
-        //SetTitle, SetArrow Active
-        private void CheckControl()
-        {
-            if (!IsOtherMode)
-            {
-                _textTitle.text = defaultPanels[_page].name.Replace("_", " ");    
-            }
-            else
-            {
-                if (otherPanels.Count > 0)
-                {
-                    _textTitle.text = otherPanels[_page].name.Replace("_", " ");
-                }
-            }
-            
-            SetArrowActive();
-        }
-        
         public void Click_Mode()
         {
-            IsOtherMode = !IsOtherMode;
-            SetMode();
-            CheckControl();
+            _isOtherMode = !_isOtherMode;
+            panelTransformDefault.gameObject.SetActive(!_isOtherMode);
+            if (HasOtherPanels) panelTransformOther.gameObject.SetActive(_isOtherMode);
+            UpdateUI();
         }
-        
-        private void SetMode()
+
+        private static void CollectPanels(Transform parent, List<GameObject> list)
         {
-            panelTransformDefault.gameObject.SetActive(!IsOtherMode);
-            if(otherPanels.Count > 0) panelTransformOther.gameObject.SetActive(IsOtherMode);
+            foreach (Transform t in parent)
+            {
+                list.Add(t.gameObject);
+                t.gameObject.SetActive(false);
+            }
+            if (list.Count > 0) list[0].SetActive(true);
         }
     }
 }
