@@ -11,10 +11,15 @@ namespace projectsplippy
     {
         [Header("End Panel")]
         [SerializeField] private CanvasGroup endCanvasGroup;
-        [SerializeField] private Image endPanelImage;
         [SerializeField, Min(0.1f)] private float endFadeInDuration = 0.5f;
         [SerializeField] private TMP_Text gameOverReasonText;
         [SerializeField] private TMP_Text finalScoreText;
+
+        [Header("Camera Tween")]
+        [SerializeField] private Camera cameraToTween;
+        [SerializeField] private float cameraUpDistance = 3f;
+        [SerializeField, Min(0.1f)] private float cameraTweenDuration = 1.5f;
+        [SerializeField] private Ease cameraTweenEase = Ease.OutQuad;
 
         [Header("Delayed Reveal")]
         [SerializeField] private GameObject leaderboardPanel;
@@ -49,6 +54,16 @@ namespace projectsplippy
         [SerializeField] private float entryBounceScale = 1.3f;
         [SerializeField] private Ease entryBounceEase = Ease.OutBack;
 
+        [Header("Game Over Reasons")]
+        [SerializeField] private string[] gameOverReasons = new string[]
+        {
+            "Island too polluted!",
+            "Slippy is surrounded with pollution!",
+            "The pollution overwhelmed Slippy!",
+            "Slippy couldn't clean fast enough!",
+            "The island has been consumed by waste!"
+        };
+
         private const string HighScoreKey = "SplippyHighScores";
         private int finalScore;
         private string submittedPlayerName;
@@ -57,7 +72,10 @@ namespace projectsplippy
         private Tween fadeTween;
         private Tween riseTween;
         private Tween entryBounceTween;
+        private Tween cameraTween;
         private readonly List<TMP_Text> instantiatedEntries = new List<TMP_Text>();
+        private Vector3 cameraOriginalPosition;
+        private bool hasCachedCameraPosition;
 
         private void Awake()
         {
@@ -88,9 +106,16 @@ namespace projectsplippy
         {
             finalScore = score;
 
+            // Use a random themed reason if none provided or default fallback
+            string displayReason = reason;
+            if (string.IsNullOrWhiteSpace(displayReason) || displayReason == "No more moves!")
+            {
+                displayReason = PickRandomReason();
+            }
+
             if (gameOverReasonText != null)
             {
-                gameOverReasonText.text = reason;
+                gameOverReasonText.text = displayReason;
             }
 
             if (finalScoreText != null)
@@ -104,18 +129,40 @@ namespace projectsplippy
             // Leaderboard is visible and populated from the start
             PopulateLeaderboard();
 
-            // Make the End panel Image fully opaque for the dimmed background
-            if (endPanelImage != null)
-            {
-                Color c = endPanelImage.color;
-                c.a = 0.5f;
-                endPanelImage.color = c;
-            }
+            // Tween the camera upward
+            TweenCameraUp();
 
             endCanvasGroup.alpha = 0f;
             endCanvasGroup.gameObject.SetActive(true);
             fadeTween = Tween.Alpha(endCanvasGroup, 1f, endFadeInDuration)
                 .OnComplete(() => StartCoroutine(ShowHighscoreInputAfterDelay()));
+        }
+
+        private string PickRandomReason()
+        {
+            if (gameOverReasons == null || gameOverReasons.Length == 0)
+            {
+                return "No more moves!";
+            }
+
+            return gameOverReasons[Random.Range(0, gameOverReasons.Length)];
+        }
+
+        private void TweenCameraUp()
+        {
+            if (cameraToTween == null)
+            {
+                return;
+            }
+
+            if (!hasCachedCameraPosition)
+            {
+                cameraOriginalPosition = cameraToTween.transform.position;
+                hasCachedCameraPosition = true;
+            }
+
+            Vector3 target = cameraOriginalPosition + new Vector3(0f, cameraUpDistance, 0f);
+            cameraTween = Tween.Position(cameraToTween.transform, target, cameraTweenDuration, cameraTweenEase);
         }
 
         private void HideDelayedChildren()
@@ -329,7 +376,7 @@ namespace projectsplippy
                         Vector3.one * entryBounceScale,
                         entryBounceDuration,
                         entryBounceEase,
-                        cycles: 2,
+                        cycles: -1,
                         cycleMode: CycleMode.Yoyo);
                     return;
                 }
@@ -402,6 +449,11 @@ namespace projectsplippy
             if (entryBounceTween.isAlive)
             {
                 entryBounceTween.Stop();
+            }
+
+            if (cameraTween.isAlive)
+            {
+                cameraTween.Stop();
             }
         }
 

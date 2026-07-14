@@ -3,8 +3,6 @@ using System.Collections.Generic;
 using PrimeTween;
 using TMPro;
 using UnityEngine;
-using UnityEngine.InputSystem;
-using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
 namespace projectsplippy
@@ -35,20 +33,7 @@ namespace projectsplippy
 
         [Header("Game Over")]
         [SerializeField] private GameOverController gameOverController;
-
-        [Header("Legacy Game Over UI")]
-        [SerializeField] private bool enableGameOverPresentation = true;
-        [SerializeField] private TMP_Text gameOverHeaderText;
-        [SerializeField] private TMP_Text gameOverReasonText;
-        [SerializeField] private TMP_Text gameOverFinalScoreText;
-        [SerializeField] private TMP_Text gameOverClickAnywhereText;
-        [SerializeField] private Graphic gameOverRetryBlockerGraphic;
-        [SerializeField] private Color gameOverRetryBlockerColor = Color.white;
-        [SerializeField, Min(0.02f)] private float gameOverUiTweenDuration = 3f;
-        [SerializeField, Min(1f)] private float gameOverClickPulseScale = 1.08f;
-        [SerializeField, Min(0.02f)] private float gameOverClickPulseDuration = 3f;
-        [SerializeField] private Ease gameOverClickPulseEase = Ease.InOutSine;
-        [SerializeField] private string finalScorePrefix = "Final Score: ";
+        [SerializeField] private GameObject gameGameObject;
 
         [Header("Audio")]
         [SerializeField] private AudioSource runStateAudioSource;
@@ -89,19 +74,6 @@ namespace projectsplippy
         private bool hasCachedTorrentModeLabelScale;
         private bool torrentModeLabelVisibleStateKnown;
         private bool torrentModeLabelVisible;
-        private Tween gameOverHeaderFadeTween;
-        private Tween gameOverReasonFadeTween;
-        private Tween gameOverFinalScoreFadeTween;
-        private Tween gameOverClickFadeTween;
-        private Tween gameOverClickPulseTween;
-        private Tween gameOverBlockerFadeTween;
-        private Coroutine gameOverPresentationRoutine;
-        private Coroutine gameOverRestartRoutine;
-        private bool gameOverAwaitingRestartClick;
-        private bool gameOverRestartSequenceStarted;
-        private Vector3 gameOverClickTextBaseScale = Vector3.one;
-        private bool hasCachedGameOverClickTextScale;
-        private Graphic runtimeGameOverRetryBlockerGraphic;
         private Tween gameplayHudFadeTween;
 
         private bool chargePreviewActive;
@@ -111,28 +83,10 @@ namespace projectsplippy
 
         private void Update()
         {
-            // Debug: press G to trigger game over
-            // if (Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame)
-            // {
-            //     TriggerGameOver("Debug (G key)");
-            //     return;
-            // }
-
-            if (!IsGameOver || !gameOverAwaitingRestartClick || gameOverRestartSequenceStarted)
-            {
-                return;
-            }
-
-            if (IsAnyPointerPressedThisFrame())
-            {
-                BeginGameOverRestartSequence();
-            }
         }
 
         private void OnDisable()
         {
-            StopGameOverPresentationTweens();
-
             if (gameplayHudFadeTween.isAlive)
             {
                 gameplayHudFadeTween.Stop();
@@ -157,7 +111,6 @@ namespace projectsplippy
             TryAutoAssignTorrentModeLabel();
             CacheTorrentModeLabelScale();
             torrentModeLabelVisibleStateKnown = false;
-            ResetGameOverPresentationUi();
             UpdateTorrentModeLabelState(IsTorrentActive, immediate: true);
 
             if (torrentFlowSlider != null)
@@ -305,7 +258,7 @@ namespace projectsplippy
 
         public void TriggerSoftLockGameOver()
         {
-            TriggerGameOver("Soft-lock detected!");
+            TriggerGameOver("Slippy got locked out!");
         }
 
         public bool ConsumeTorrentActivationFlag()
@@ -501,17 +454,17 @@ namespace projectsplippy
             }
 
             IsGameOver = true;
+
+            if (gameGameObject != null)
+            {
+                gameGameObject.SetActive(false);
+            }
+
             PlayRunStateSfx(gameOverSfx, gameOverSfxVolume);
             RefreshHud();
 
-            string displayReason = string.IsNullOrWhiteSpace(reason) ? "No more moves!" : reason;
+            string displayReason = string.IsNullOrWhiteSpace(reason) ? null : reason;
             gameOverController?.Show(CurrentScore, displayReason);
-
-            // Legacy presentation is superseded when GameOverController is wired
-            if (enableGameOverPresentation && gameOverController == null)
-            {
-                StartGameOverPresentation();
-            }
         }
 
         private void RefreshHud()
@@ -647,514 +600,7 @@ namespace projectsplippy
             AudioSource.PlayClipAtPoint(clip, position, clampedVolume);
         }
 
-        private void ResetGameOverPresentationUi()
-        {
-            StopGameOverPresentationTweens();
-            gameOverAwaitingRestartClick = false;
-            gameOverRestartSequenceStarted = false;
 
-            if (!enableGameOverPresentation)
-            {
-                if (scoreText != null)
-                {
-                    scoreText.gameObject.SetActive(true);
-                }
-
-                return;
-            }
-
-            TryAutoAssignGameOverPresentationRefs();
-
-            if (scoreText != null)
-            {
-                scoreText.gameObject.SetActive(true);
-            }
-
-            HideGameOverText(gameOverHeaderText);
-            HideGameOverText(gameOverReasonText);
-            HideGameOverText(gameOverFinalScoreText);
-            HideGameOverText(gameOverClickAnywhereText);
-
-            if (gameOverRetryBlockerGraphic != null)
-            {
-                SetRetryBlockerColorAndAlpha(gameOverRetryBlockerGraphic, 1f);
-                gameOverRetryBlockerGraphic.gameObject.SetActive(false);
-            }
-
-            if (runtimeGameOverRetryBlockerGraphic != null)
-            {
-                SetRetryBlockerColorAndAlpha(runtimeGameOverRetryBlockerGraphic, 1f);
-                runtimeGameOverRetryBlockerGraphic.gameObject.SetActive(false);
-            }
-        }
-
-        private void StartGameOverPresentation()
-        {
-            StopGameOverPresentationTweens();
-            gameOverAwaitingRestartClick = false;
-            gameOverRestartSequenceStarted = false;
-
-            TryAutoAssignGameOverPresentationRefs();
-
-            if (scoreText != null)
-            {
-                scoreText.gameObject.SetActive(false);
-            }
-
-            PrepareGameOverText(gameOverHeaderText);
-            PrepareGameOverText(gameOverReasonText);
-            PrepareGameOverText(gameOverFinalScoreText);
-            PrepareGameOverText(gameOverClickAnywhereText);
-
-            if (gameOverFinalScoreText != null)
-            {
-                string prefix = string.IsNullOrWhiteSpace(finalScorePrefix) ? "Score: " : finalScorePrefix;
-                gameOverFinalScoreText.text = $"{prefix}{CurrentScore}";
-            }
-
-            if (gameOverRetryBlockerGraphic != null)
-            {
-                SetRetryBlockerColorAndAlpha(gameOverRetryBlockerGraphic, 1f);
-                gameOverRetryBlockerGraphic.gameObject.SetActive(false);
-            }
-
-            if (runtimeGameOverRetryBlockerGraphic != null)
-            {
-                SetRetryBlockerColorAndAlpha(runtimeGameOverRetryBlockerGraphic, 1f);
-                runtimeGameOverRetryBlockerGraphic.gameObject.SetActive(false);
-            }
-
-            gameOverPresentationRoutine = StartCoroutine(GameOverPresentationRoutine());
-        }
-
-        private IEnumerator GameOverPresentationRoutine()
-        {
-            float duration = Mathf.Max(0.02f, gameOverUiTweenDuration);
-            gameOverHeaderFadeTween = FadeTextAlpha(gameOverHeaderText, 1f, duration);
-            gameOverReasonFadeTween = FadeTextAlpha(gameOverReasonText, 1f, duration);
-            gameOverFinalScoreFadeTween = FadeTextAlpha(gameOverFinalScoreText, 1f, duration);
-            gameOverClickFadeTween = FadeTextAlpha(gameOverClickAnywhereText, 1f, duration);
-
-            yield return new WaitForSeconds(duration);
-
-            StartGameOverClickPulse();
-            gameOverAwaitingRestartClick = true;
-            gameOverPresentationRoutine = null;
-        }
-
-        private void BeginGameOverRestartSequence()
-        {
-            if (gameOverRestartSequenceStarted)
-            {
-                return;
-            }
-
-            gameOverAwaitingRestartClick = false;
-            gameOverRestartSequenceStarted = true;
-
-            if (gameOverClickPulseTween.isAlive)
-            {
-                gameOverClickPulseTween.Stop();
-            }
-
-            if (gameOverClickAnywhereText != null && hasCachedGameOverClickTextScale)
-            {
-                gameOverClickAnywhereText.transform.localScale = gameOverClickTextBaseScale;
-            }
-
-            gameOverRestartRoutine = StartCoroutine(GameOverRestartRoutine());
-        }
-
-        private IEnumerator GameOverRestartRoutine()
-        {
-            float duration = Mathf.Max(0.02f, gameOverUiTweenDuration);
-            Graphic blockerGraphic = ResolveRetryBlockerGraphicForPresentation();
-
-            if (blockerGraphic != null)
-            {
-                blockerGraphic.gameObject.SetActive(true);
-                SetRetryBlockerColorAndAlpha(blockerGraphic, 0f);
-
-                gameOverBlockerFadeTween = Tween.Custom(
-                    0f,
-                    1f,
-                    duration: duration,
-                    onValueChange: alpha => SetRetryBlockerColorAndAlpha(blockerGraphic, alpha));
-            }
-
-            yield return new WaitForSeconds(duration);
-            ReloadCurrentScene();
-        }
-
-        private void StartGameOverClickPulse()
-        {
-            if (gameOverClickAnywhereText == null || !gameOverClickAnywhereText.gameObject.activeSelf)
-            {
-                return;
-            }
-
-            if (!hasCachedGameOverClickTextScale)
-            {
-                gameOverClickTextBaseScale = gameOverClickAnywhereText.transform.localScale;
-                hasCachedGameOverClickTextScale = true;
-            }
-
-            if (gameOverClickPulseTween.isAlive)
-            {
-                gameOverClickPulseTween.Stop();
-            }
-
-            Transform clickTransform = gameOverClickAnywhereText.transform;
-            clickTransform.localScale = gameOverClickTextBaseScale;
-            Vector3 targetScale = gameOverClickTextBaseScale * Mathf.Max(1f, gameOverClickPulseScale);
-            gameOverClickPulseTween = Tween.Scale(
-                clickTransform,
-                targetScale,
-                Mathf.Max(0.02f, gameOverClickPulseDuration),
-                gameOverClickPulseEase,
-                cycles: -1,
-                cycleMode: CycleMode.Yoyo);
-        }
-
-        private void StopGameOverPresentationTweens()
-        {
-            if (gameOverPresentationRoutine != null)
-            {
-                StopCoroutine(gameOverPresentationRoutine);
-                gameOverPresentationRoutine = null;
-            }
-
-            if (gameOverRestartRoutine != null)
-            {
-                StopCoroutine(gameOverRestartRoutine);
-                gameOverRestartRoutine = null;
-            }
-
-            if (gameOverHeaderFadeTween.isAlive)
-            {
-                gameOverHeaderFadeTween.Stop();
-            }
-
-            if (gameOverReasonFadeTween.isAlive)
-            {
-                gameOverReasonFadeTween.Stop();
-            }
-
-            if (gameOverFinalScoreFadeTween.isAlive)
-            {
-                gameOverFinalScoreFadeTween.Stop();
-            }
-
-            if (gameOverClickFadeTween.isAlive)
-            {
-                gameOverClickFadeTween.Stop();
-            }
-
-            if (gameOverClickPulseTween.isAlive)
-            {
-                gameOverClickPulseTween.Stop();
-            }
-
-            if (gameOverBlockerFadeTween.isAlive)
-            {
-                gameOverBlockerFadeTween.Stop();
-            }
-
-            if (gameOverClickAnywhereText != null && hasCachedGameOverClickTextScale)
-            {
-                gameOverClickAnywhereText.transform.localScale = gameOverClickTextBaseScale;
-            }
-        }
-
-        private Tween FadeTextAlpha(TMP_Text text, float targetAlpha, float duration)
-        {
-            if (text == null)
-            {
-                return default;
-            }
-
-            float startAlpha = text.color.a;
-
-            return Tween.Custom(
-                startAlpha,
-                Mathf.Clamp01(targetAlpha),
-                duration: Mathf.Max(0.02f, duration),
-                onValueChange: alpha => SetTextAlpha(text, alpha));
-        }
-
-        private static void SetTextAlpha(TMP_Text text, float alpha)
-        {
-            if (text == null)
-            {
-                return;
-            }
-
-            Color color = text.color;
-            color.a = Mathf.Clamp01(alpha);
-            text.color = color;
-        }
-
-        private void SetGraphicAlpha(Graphic graphic, float alpha)
-        {
-            if (graphic == null)
-            {
-                return;
-            }
-
-            Color color = graphic.color;
-            color.a = Mathf.Clamp01(alpha);
-            graphic.color = color;
-        }
-
-        private void SetRetryBlockerColorAndAlpha(Graphic graphic, float alpha)
-        {
-            if (graphic == null)
-            {
-                return;
-            }
-
-            Color blockerColor = gameOverRetryBlockerColor;
-            blockerColor.a = Mathf.Clamp01(alpha);
-            graphic.color = blockerColor;
-        }
-
-        private static void PrepareGameOverText(TMP_Text text)
-        {
-            if (text == null)
-            {
-                return;
-            }
-
-            text.gameObject.SetActive(true);
-            SetTextAlpha(text, 0f);
-        }
-
-        private static void HideGameOverText(TMP_Text text)
-        {
-            if (text == null)
-            {
-                return;
-            }
-
-            SetTextAlpha(text, 1f);
-            text.gameObject.SetActive(false);
-        }
-
-        private void TryAutoAssignGameOverPresentationRefs()
-        {
-            if (gameOverHeaderText == null)
-            {
-                gameOverHeaderText = FindSceneTmpTextByNames(new[] { "Header" });
-            }
-
-            if (gameOverReasonText == null)
-            {
-                gameOverReasonText = FindSceneTmpTextByNames(new[] { "GameOverReason" });
-            }
-
-            if (gameOverFinalScoreText == null)
-            {
-                gameOverFinalScoreText = FindSceneTmpTextByNames(new[] { "FinalScore" });
-            }
-
-            if (gameOverClickAnywhereText == null)
-            {
-                gameOverClickAnywhereText = FindSceneTmpTextByNames(new[] { "ClickTheScreen", "Click the Screen" });
-            }
-
-            if (gameOverRetryBlockerGraphic == null)
-            {
-                gameOverRetryBlockerGraphic = FindSceneGraphicByNames(new[] { "BLOCKERSRETRY", "BLOCKERS" });
-            }
-        }
-
-        private Graphic ResolveRetryBlockerGraphicForPresentation()
-        {
-            if (gameOverRetryBlockerGraphic != null)
-            {
-                gameOverRetryBlockerGraphic.gameObject.SetActive(true);
-
-                if (gameOverRetryBlockerGraphic.gameObject.activeInHierarchy)
-                {
-                    return gameOverRetryBlockerGraphic;
-                }
-
-                gameOverRetryBlockerGraphic.gameObject.SetActive(false);
-            }
-
-            if (runtimeGameOverRetryBlockerGraphic == null)
-            {
-                runtimeGameOverRetryBlockerGraphic = CreateRuntimeRetryBlockerGraphic();
-            }
-
-            return runtimeGameOverRetryBlockerGraphic;
-        }
-
-        private Graphic CreateRuntimeRetryBlockerGraphic()
-        {
-            Canvas canvas = null;
-
-            if (scoreText != null)
-            {
-                canvas = scoreText.canvas;
-            }
-
-            if (canvas == null)
-            {
-                Canvas[] canvases = Resources.FindObjectsOfTypeAll<Canvas>();
-
-                for (int i = 0; i < canvases.Length; i++)
-                {
-                    Canvas candidate = canvases[i];
-
-                    if (candidate != null && candidate.gameObject.scene.IsValid())
-                    {
-                        canvas = candidate;
-                        break;
-                    }
-                }
-            }
-
-            if (canvas == null)
-            {
-                return null;
-            }
-
-            var blockerObject = new GameObject("BLOCKERSRETRY_Runtime");
-            blockerObject.layer = canvas.gameObject.layer;
-            RectTransform rect = blockerObject.AddComponent<RectTransform>();
-            rect.SetParent(canvas.transform, false);
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-            rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.SetAsLastSibling();
-
-            Image image = blockerObject.AddComponent<Image>();
-            image.color = new Color(
-                gameOverRetryBlockerColor.r,
-                gameOverRetryBlockerColor.g,
-                gameOverRetryBlockerColor.b,
-                0f);
-            image.raycastTarget = true;
-            blockerObject.SetActive(false);
-            return image;
-        }
-
-        private static TMP_Text FindSceneTmpTextByNames(IReadOnlyList<string> names)
-        {
-            TMP_Text[] texts = Resources.FindObjectsOfTypeAll<TMP_Text>();
-            TMP_Text fallback = null;
-
-            for (int i = 0; i < texts.Length; i++)
-            {
-                TMP_Text candidate = texts[i];
-
-                if (candidate == null || !candidate.gameObject.scene.IsValid())
-                {
-                    continue;
-                }
-
-                if (!IsNameMatch(candidate.gameObject.name, names))
-                {
-                    continue;
-                }
-
-                if (IsDirectChildOfCanvas(candidate.transform))
-                {
-                    return candidate;
-                }
-
-                fallback = candidate;
-            }
-
-            return fallback;
-        }
-
-        private static Graphic FindSceneGraphicByNames(IReadOnlyList<string> names)
-        {
-            Graphic[] graphics = Resources.FindObjectsOfTypeAll<Graphic>();
-            Graphic fallback = null;
-
-            for (int i = 0; i < graphics.Length; i++)
-            {
-                Graphic candidate = graphics[i];
-
-                if (candidate == null || !candidate.gameObject.scene.IsValid())
-                {
-                    continue;
-                }
-
-                if (!IsNameMatch(candidate.gameObject.name, names))
-                {
-                    continue;
-                }
-
-                if (IsDirectChildOfCanvas(candidate.transform))
-                {
-                    return candidate;
-                }
-
-                fallback = candidate;
-            }
-
-            return fallback;
-        }
-
-        private static bool IsDirectChildOfCanvas(Transform transform)
-        {
-            return transform != null && transform.parent != null && transform.parent.GetComponent<Canvas>() != null;
-        }
-
-        private static bool IsNameMatch(string objectName, IReadOnlyList<string> expectedNames)
-        {
-            string normalizedObjectName = NormalizeObjectName(objectName);
-
-            for (int i = 0; i < expectedNames.Count; i++)
-            {
-                if (normalizedObjectName == NormalizeObjectName(expectedNames[i]))
-                {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        private static string NormalizeObjectName(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-            {
-                return string.Empty;
-            }
-
-            return value
-                .Replace(" ", string.Empty)
-                .Replace("_", string.Empty)
-                .Replace("-", string.Empty)
-                .ToLowerInvariant();
-        }
-
-        private static bool IsAnyPointerPressedThisFrame()
-        {
-            if (Mouse.current != null && Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                return true;
-            }
-
-            if (Touchscreen.current != null && Touchscreen.current.primaryTouch.press.wasPressedThisFrame)
-            {
-                return true;
-            }
-
-            return false;
-        }
-
-        private static void ReloadCurrentScene()
-        {
-            SceneManager.LoadScene(SceneManager.GetActiveScene().buildIndex);
-        }
 
         private void TryAutoAssignTorrentModeLabel()
         {
