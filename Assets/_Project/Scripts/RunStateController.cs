@@ -111,11 +111,12 @@ namespace projectsplippy
 
         private void Update()
         {
-            if (Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame)
-            {
-                TriggerGameOver("Debug (G key)");
-                return;
-            }
+            // Debug: press G to trigger game over
+            // if (Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame)
+            // {
+            //     TriggerGameOver("Debug (G key)");
+            //     return;
+            // }
 
             if (!IsGameOver || !gameOverAwaitingRestartClick || gameOverRestartSequenceStarted)
             {

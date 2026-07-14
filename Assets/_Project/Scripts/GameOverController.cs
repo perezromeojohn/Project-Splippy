@@ -11,6 +11,7 @@ namespace projectsplippy
     {
         [Header("End Panel")]
         [SerializeField] private CanvasGroup endCanvasGroup;
+        [SerializeField] private Image endPanelImage;
         [SerializeField, Min(0.1f)] private float endFadeInDuration = 0.5f;
         [SerializeField] private TMP_Text gameOverReasonText;
         [SerializeField] private TMP_Text finalScoreText;
@@ -102,6 +103,14 @@ namespace projectsplippy
 
             // Leaderboard is visible and populated from the start
             PopulateLeaderboard();
+
+            // Make the End panel Image fully opaque for the dimmed background
+            if (endPanelImage != null)
+            {
+                Color c = endPanelImage.color;
+                c.a = 0.5f;
+                endPanelImage.color = c;
+            }
 
             endCanvasGroup.alpha = 0f;
             endCanvasGroup.gameObject.SetActive(true);
