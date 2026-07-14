@@ -535,7 +535,7 @@ namespace projectsplippy
         public IEnumerator StartGameplayBloomReveal(float ringStepDelay)
         {
             currentPhase = GamePhase.Revealing;
-            runState?.PlayHudIntroFromPreload();
+            runState?.PlayGameplayHudFadeIn();
 
             tileBoardSystem.InitializeBoard(currentCell);
             Vector2Int center = CenterCell;
@@ -660,7 +660,7 @@ namespace projectsplippy
         {
             tileBoardSystem.InitializeBoard(currentCell);
             boardView.BuildBoard(gridSize, cellSize, GetGridCenterWorld(), tileBoardSystem, tilePadding);
-            runState?.PlayHudIntroFromPreload();
+            runState?.PlayGameplayHudFadeIn();
             runState.Initialize();
             splippy.position = CellToWorldForSplippy(currentCell);
             boardView.UpdateBillboardInteractor(splippy.position);

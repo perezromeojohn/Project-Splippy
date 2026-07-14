@@ -12,7 +12,6 @@ namespace projectsplippy
 
         [Header("Splash Resolve Timing")]
         [SerializeField] private float splashPauseDuration = 0.14f;
-        [SerializeField] private float splashRippleStepDelay = 0.045f;
         [SerializeField, Min(1)] private int splashRadius = 2;
 
         [Header("Audio")]

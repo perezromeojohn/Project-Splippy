@@ -26,6 +26,8 @@ namespace projectsplippy
         [SerializeField] private bool logPathScoreDebug = true;
 
         [Header("UI")]
+        [SerializeField] private CanvasGroup gameplayHudCanvasGroup;
+        [SerializeField] private float gameplayHudFadeDuration = 0.4f;
         [SerializeField] private Slider torrentFlowSlider;
         [SerializeField] private TMP_Text scoreText;
         [SerializeField] private TMP_Text sanitationSpawnTrackerText;
@@ -64,12 +66,6 @@ namespace projectsplippy
         [SerializeField, Min(0.05f)] private float torrentModeLabelPulseDuration = 0.55f;
         [SerializeField] private Ease torrentModeLabelPulseEase = Ease.InOutSine;
 
-        [Header("Preload UI Intro")]
-        [SerializeField] private bool enablePreloadHudIntro = true;
-        [SerializeField] private float preloadSliderYOffset = 50f;
-        [SerializeField] private float preloadScoreYOffset = -50f;
-        [SerializeField, Min(0.05f)] private float preloadHudIntroDuration = 0.45f;
-
         public bool IsGameOver { get; private set; }
         public int CurrentScore { get; private set; }
         public bool IsTorrentActive => torrentTurnsLeft > 0;
@@ -84,12 +80,6 @@ namespace projectsplippy
         private Vector3 torrentSliderBaseScale = Vector3.one;
         private bool hasCachedTorrentSliderScale;
         private Coroutine torrentSliderValueTweenRoutine;
-        private RectTransform cachedSliderRect;
-        private RectTransform cachedScoreRect;
-        private Vector2 cachedSliderAnchoredPosition;
-        private Vector2 cachedScoreAnchoredPosition;
-        private bool hasCachedHudPositions;
-        private Coroutine preloadHudIntroRoutine;
         private Tween torrentModeLabelTween;
         private Tween torrentModeLabelPulseTween;
         private Vector3 torrentModeLabelBaseScale = Vector3.one;
@@ -109,6 +99,7 @@ namespace projectsplippy
         private Vector3 gameOverClickTextBaseScale = Vector3.one;
         private bool hasCachedGameOverClickTextScale;
         private Graphic runtimeGameOverRetryBlockerGraphic;
+        private Tween gameplayHudFadeTween;
 
         private bool chargePreviewActive;
         private int previewCharge;
@@ -131,6 +122,11 @@ namespace projectsplippy
         private void OnDisable()
         {
             StopGameOverPresentationTweens();
+
+            if (gameplayHudFadeTween.isAlive)
+            {
+                gameplayHudFadeTween.Stop();
+            }
         }
 
         public void Initialize()
@@ -160,6 +156,24 @@ namespace projectsplippy
             }
 
             RefreshHud();
+        }
+
+        public void PlayGameplayHudFadeIn()
+        {
+            if (gameplayHudCanvasGroup == null)
+            {
+                return;
+            }
+
+            gameplayHudCanvasGroup.gameObject.SetActive(true);
+            gameplayHudCanvasGroup.alpha = 0f;
+
+            if (gameplayHudFadeTween.isAlive)
+            {
+                gameplayHudFadeTween.Stop();
+            }
+
+            gameplayHudFadeTween = Tween.Alpha(gameplayHudCanvasGroup, 1f, gameplayHudFadeDuration);
         }
 
         public bool CanAffordPath(int tileSteps)
@@ -307,8 +321,6 @@ namespace projectsplippy
 
         public void PrepareHudForPreload()
         {
-            CacheHudIntroPositions();
-
             if (scoreText != null)
             {
                 scoreText.text = "Score: 0";
@@ -322,54 +334,6 @@ namespace projectsplippy
             }
 
             UpdateTorrentModeLabelState(false, immediate: true);
-
-            if (!enablePreloadHudIntro)
-            {
-                return;
-            }
-
-            if (preloadHudIntroRoutine != null)
-            {
-                StopCoroutine(preloadHudIntroRoutine);
-                preloadHudIntroRoutine = null;
-            }
-
-            if (cachedSliderRect != null)
-            {
-                cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition + new Vector2(0f, preloadSliderYOffset);
-            }
-
-            if (cachedScoreRect != null)
-            {
-                cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition + new Vector2(0f, preloadScoreYOffset);
-            }
-        }
-
-        public void PlayHudIntroFromPreload()
-        {
-            CacheHudIntroPositions();
-
-            if (!enablePreloadHudIntro)
-            {
-                if (cachedSliderRect != null)
-                {
-                    cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition;
-                }
-
-                if (cachedScoreRect != null)
-                {
-                    cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition;
-                }
-
-                return;
-            }
-
-            if (preloadHudIntroRoutine != null)
-            {
-                StopCoroutine(preloadHudIntroRoutine);
-            }
-
-            preloadHudIntroRoutine = StartCoroutine(TweenHudIntroRoutine());
         }
 
         public void PreviewPathStepCharge(TileStepResult step)
@@ -625,75 +589,6 @@ namespace projectsplippy
             }
 
             torrentSliderValueTweenRoutine = null;
-        }
-
-        private void CacheHudIntroPositions()
-        {
-            if (hasCachedHudPositions)
-            {
-                return;
-            }
-
-            if (torrentFlowSlider != null)
-            {
-                cachedSliderRect = torrentFlowSlider.transform as RectTransform;
-
-                if (cachedSliderRect != null)
-                {
-                    cachedSliderAnchoredPosition = cachedSliderRect.anchoredPosition;
-                }
-            }
-
-            if (scoreText != null)
-            {
-                cachedScoreRect = scoreText.transform as RectTransform;
-
-                if (cachedScoreRect != null)
-                {
-                    cachedScoreAnchoredPosition = cachedScoreRect.anchoredPosition;
-                }
-            }
-
-            hasCachedHudPositions = cachedSliderRect != null || cachedScoreRect != null;
-        }
-
-        private IEnumerator TweenHudIntroRoutine()
-        {
-            Vector2 sliderStart = cachedSliderRect != null ? cachedSliderRect.anchoredPosition : Vector2.zero;
-            Vector2 scoreStart = cachedScoreRect != null ? cachedScoreRect.anchoredPosition : Vector2.zero;
-            float duration = Mathf.Max(0.05f, preloadHudIntroDuration);
-            float elapsed = 0f;
-
-            while (elapsed < duration)
-            {
-                elapsed += Time.deltaTime;
-                float t = Mathf.Clamp01(elapsed / duration);
-                float eased = 1f - Mathf.Pow(1f - t, 3f);
-
-                if (cachedSliderRect != null)
-                {
-                    cachedSliderRect.anchoredPosition = Vector2.Lerp(sliderStart, cachedSliderAnchoredPosition, eased);
-                }
-
-                if (cachedScoreRect != null)
-                {
-                    cachedScoreRect.anchoredPosition = Vector2.Lerp(scoreStart, cachedScoreAnchoredPosition, eased);
-                }
-
-                yield return null;
-            }
-
-            if (cachedSliderRect != null)
-            {
-                cachedSliderRect.anchoredPosition = cachedSliderAnchoredPosition;
-            }
-
-            if (cachedScoreRect != null)
-            {
-                cachedScoreRect.anchoredPosition = cachedScoreAnchoredPosition;
-            }
-
-            preloadHudIntroRoutine = null;
         }
 
         private void CacheTorrentSliderScale()
