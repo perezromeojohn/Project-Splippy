@@ -33,7 +33,10 @@ namespace projectsplippy
         [SerializeField] private TMP_Text sanitationSpawnTrackerText;
         [SerializeField] private TMP_Text torrentModeLabel;
 
-        [Header("Game Over UI")]
+        [Header("Game Over")]
+        [SerializeField] private GameOverController gameOverController;
+
+        [Header("Legacy Game Over UI")]
         [SerializeField] private bool enableGameOverPresentation = true;
         [SerializeField] private TMP_Text gameOverHeaderText;
         [SerializeField] private TMP_Text gameOverReasonText;
@@ -108,6 +111,12 @@ namespace projectsplippy
 
         private void Update()
         {
+            if (Keyboard.current != null && Keyboard.current.gKey.wasPressedThisFrame)
+            {
+                TriggerGameOver("Debug (G key)");
+                return;
+            }
+
             if (!IsGameOver || !gameOverAwaitingRestartClick || gameOverRestartSequenceStarted)
             {
                 return;
@@ -295,7 +304,7 @@ namespace projectsplippy
 
         public void TriggerSoftLockGameOver()
         {
-            TriggerGameOver();
+            TriggerGameOver("Soft-lock detected!");
         }
 
         public bool ConsumeTorrentActivationFlag()
@@ -483,7 +492,7 @@ namespace projectsplippy
             return step.EnteredType.ToString();
         }
 
-        private void TriggerGameOver()
+        private void TriggerGameOver(string reason = null)
         {
             if (IsGameOver)
             {
@@ -494,7 +503,11 @@ namespace projectsplippy
             PlayRunStateSfx(gameOverSfx, gameOverSfxVolume);
             RefreshHud();
 
-            if (enableGameOverPresentation)
+            string displayReason = string.IsNullOrWhiteSpace(reason) ? "No more moves!" : reason;
+            gameOverController?.Show(CurrentScore, displayReason);
+
+            // Legacy presentation is superseded when GameOverController is wired
+            if (enableGameOverPresentation && gameOverController == null)
             {
                 StartGameOverPresentation();
             }
