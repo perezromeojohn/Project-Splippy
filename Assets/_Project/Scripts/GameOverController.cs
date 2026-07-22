@@ -100,6 +100,8 @@ namespace projectsplippy
                 restartOverlay.gameObject.SetActive(false);
                 restartOverlay.color = new Color(1f, 1f, 1f, 0f);
             }
+
+            nameInputField.characterLimit = 20;
         }
 
         public void Show(int score, string reason)
