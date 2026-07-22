@@ -60,10 +60,12 @@ namespace projectsplippy
         public int TorrentTurnsLeft => torrentTurnsLeft;
         public int BasePathRange => Mathf.Max(1, basePathRange);
         public int TorrentPathRange => Mathf.Max(BasePathRange, torrentPathRange);
+        public int TorrentScoreMultiplier => Mathf.Max(1, torrentScoreMultiplier);
 
         private int torrentCharge;
         private int torrentTurnsLeft;
         private bool torrentActivatedThisResolution;
+        private int hazardLandfillClearsThisTurn;
         private Tween torrentSliderPulseTween;
         private Vector3 torrentSliderBaseScale = Vector3.one;
         private bool hasCachedTorrentSliderScale;
@@ -266,6 +268,24 @@ namespace projectsplippy
             bool activated = torrentActivatedThisResolution;
             torrentActivatedThisResolution = false;
             return activated;
+        }
+
+        /// <summary>
+        /// Called by PathResolutionController when marine/splash effects clear trash tiles.
+        /// </summary>
+        public void AddHazardLandfillClears(int count)
+        {
+            hazardLandfillClearsThisTurn += count;
+        }
+
+        /// <summary>
+        /// Returns and resets the count of landfill tiles cleared by marine/splash this turn.
+        /// </summary>
+        public int ConsumeHazardLandfillClears()
+        {
+            int count = hazardLandfillClearsThisTurn;
+            hazardLandfillClearsThisTurn = 0;
+            return count;
         }
 
         public void PlayTorrentModeSfx()

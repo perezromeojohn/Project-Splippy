@@ -123,6 +123,11 @@ namespace projectsplippy
             };
         }
 
+        public bool HasAnyTrashTile()
+        {
+            return model.HasAnyTrashTile();
+        }
+
         public Dictionary<Vector2Int, TileType> ReplaceTraversedTiles(
             IReadOnlyList<Vector2Int> traversedCells,
             Vector2Int protectedCell,

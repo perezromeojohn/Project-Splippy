@@ -17,7 +17,8 @@ namespace projectsplippy
 
         [Header("Camera Tween")]
         [SerializeField] private Camera cameraToTween;
-        [SerializeField] private float cameraUpDistance = 3f;
+        [SerializeField] private Vector3 gameOverCameraPosition = new Vector3(0f, 12.21f, 7.41f);
+        [SerializeField] private Quaternion gameOverCameraRotation = new Quaternion(0.57357645f, 0f, 0f, 0.81915206f);
         [SerializeField, Min(0.1f)] private float cameraTweenDuration = 1.5f;
         [SerializeField] private Ease cameraTweenEase = Ease.OutQuad;
 
@@ -73,9 +74,8 @@ namespace projectsplippy
         private Tween riseTween;
         private Tween entryBounceTween;
         private Tween cameraTween;
+        private Tween cameraRotTween;
         private readonly List<TMP_Text> instantiatedEntries = new List<TMP_Text>();
-        private Vector3 cameraOriginalPosition;
-        private bool hasCachedCameraPosition;
 
         private void Awake()
         {
@@ -131,8 +131,8 @@ namespace projectsplippy
             // Leaderboard is visible and populated from the start
             PopulateLeaderboard();
 
-            // Tween the camera upward
-            TweenCameraUp();
+            // Tween the camera to game-over perspective view
+            TweenCameraToGameOver();
 
             endCanvasGroup.alpha = 0f;
             endCanvasGroup.gameObject.SetActive(true);
@@ -150,21 +150,15 @@ namespace projectsplippy
             return gameOverReasons[Random.Range(0, gameOverReasons.Length)];
         }
 
-        private void TweenCameraUp()
+        private void TweenCameraToGameOver()
         {
             if (cameraToTween == null)
             {
                 return;
             }
 
-            if (!hasCachedCameraPosition)
-            {
-                cameraOriginalPosition = cameraToTween.transform.position;
-                hasCachedCameraPosition = true;
-            }
-
-            Vector3 target = cameraOriginalPosition + new Vector3(0f, cameraUpDistance, 0f);
-            cameraTween = Tween.Position(cameraToTween.transform, target, cameraTweenDuration, cameraTweenEase);
+            cameraTween = Tween.Position(cameraToTween.transform, gameOverCameraPosition, cameraTweenDuration, cameraTweenEase);
+            cameraRotTween = Tween.Rotation(cameraToTween.transform, gameOverCameraRotation, cameraTweenDuration, cameraTweenEase);
         }
 
         private void HideDelayedChildren()
@@ -456,6 +450,11 @@ namespace projectsplippy
             if (cameraTween.isAlive)
             {
                 cameraTween.Stop();
+            }
+
+            if (cameraRotTween.isAlive)
+            {
+                cameraRotTween.Stop();
             }
         }
 

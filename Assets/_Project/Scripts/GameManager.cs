@@ -24,6 +24,7 @@ namespace projectsplippy
         [SerializeField] private GameplayPressureController gameplayPressureController;
         [SerializeField] private SanitationSpawnController sanitationSpawnController;
         [SerializeField] private PathResolutionController pathResolutionController;
+        [SerializeField] private QuestManager questManager;
         [SerializeField] private bool skipPregameSequence = true;
 
         [Header("Grid")]
@@ -143,6 +144,16 @@ namespace projectsplippy
             if (pathResolutionController == null)
             {
                 pathResolutionController = GetComponent<PathResolutionController>();
+            }
+
+            if (questManager == null)
+            {
+                questManager = GetComponent<QuestManager>();
+            }
+
+            if (questManager == null)
+            {
+                questManager = FindAnyObjectByType<QuestManager>();
             }
 
             if (boardView == null || runState == null)
@@ -935,6 +946,9 @@ namespace projectsplippy
 
             if (pathResolutionController != null)
             {
+                // Snapshot before ResolvePath clears the list
+                var snapshot = new List<TileStepResult>(deferredPathStepResults);
+
                 yield return StartCoroutine(pathResolutionController.ResolvePath(
                     tileBoardSystem,
                     boardView,
@@ -942,6 +956,16 @@ namespace projectsplippy
                     deferredPathStepResults,
                     currentCell,
                     splippy != null ? splippy.position : CellToWorldForSplippy(currentCell)));
+
+                if (questManager != null)
+                {
+                    questManager.ClearLandfillEligible = tileBoardSystem.HasAnyTrashTile();
+                    questManager.HandleTurnResolved(snapshot);
+                }
+                else
+                {
+                    Debug.LogError("[GameManager] questManager is NULL — QuestManager component not found in scene.");
+                }
             }
             else
             {

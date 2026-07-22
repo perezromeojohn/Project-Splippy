@@ -420,5 +420,18 @@ namespace projectsplippy
 
             return variantIndex % count;
         }
+
+        public bool HasAnyTrashTile()
+        {
+            foreach (TileData tile in tiles.Values)
+            {
+                if (tile != null && tile.Type == TileType.Trash)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
     }
 }

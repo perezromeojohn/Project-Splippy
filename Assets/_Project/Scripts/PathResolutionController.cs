@@ -123,6 +123,8 @@ namespace projectsplippy
 
             PlayReplacementFlips(tileBoardSystem, boardView, traversedReplacements);
 
+            int hazardFlippedScore = 0;
+
             if (marineCenters.Count > 0)
             {
                 for (int i = 0; i < marineCenters.Count; i++)
@@ -146,6 +148,8 @@ namespace projectsplippy
                         boardView,
                         crossVisualFlips,
                         marineCenter));
+
+                    hazardFlippedScore += crossVisualFlips.Count;
                 }
             }
 
@@ -171,7 +175,22 @@ namespace projectsplippy
                         boardView,
                         radiusVisualFlips,
                         splashCenter));
+
+                    hazardFlippedScore += radiusVisualFlips.Count;
                 }
+            }
+
+            if (hazardFlippedScore > 0 && runState != null)
+            {
+                int finalScore = hazardFlippedScore;
+
+                if (torrentWasActiveForPath)
+                {
+                    finalScore *= runState.TorrentScoreMultiplier;
+                }
+
+                runState.ApplyEconomyAndScore(0, finalScore);
+                runState.AddHazardLandfillClears(hazardFlippedScore);
             }
 
             boardView.RefreshProgressVisuals(tileBoardSystem);
