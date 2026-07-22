@@ -24,6 +24,9 @@ namespace projectsplippy
         [Header("Fade")]
         [SerializeField] private float fadeDuration = 0.5f;
 
+        [Header("Animator")]
+        [SerializeField] private Animator animator;
+
         private GameManager gameManager;
         private bool playPressed;
         private Vector3 logoStartLocalPosition;
@@ -79,6 +82,7 @@ namespace projectsplippy
             playButton.interactable = false;
 
             gameManager.BeginGameplayFromMenu();
+            animator.SetBool("isGameStart", true);
 
             Tween.Alpha(startCanvasGroup, 0f, fadeDuration)
                 .OnComplete(() =>
