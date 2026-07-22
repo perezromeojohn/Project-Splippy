@@ -4223,7 +4223,7 @@ MonoBehaviour:
   torrentSliderHopPulseEase: 3
   torrentSliderValueTweenDuration: 0.12
   torrentChargeTarget: 50
-  torrentDurationTurns: 3
+  torrentDurationSeconds: 15
   torrentPathRange: 7
   basePathRange: 5
   torrentScoreMultiplier: 4
@@ -6325,6 +6325,9 @@ MonoBehaviour:
   - {fileID: 11400000, guid: c7e06da5292714541880cea9787cd4be, type: 2}
   - {fileID: 11400000, guid: cf6d8c08065e34d48a29afd6d115e9ca, type: 2}
   - {fileID: 11400000, guid: c8090e56a6577f44fac0e4c57d17d339, type: 2}
+  - {fileID: 11400000, guid: 0310e42c6f4028847a5631cd04b169ce, type: 2}
+  - {fileID: 11400000, guid: 4577243217d7d784a955b88f66fb38a7, type: 2}
+  - {fileID: 11400000, guid: 59eab2a13cd785c40997f0bf1a5bede1, type: 2}
   runState: {fileID: 642650713}
   slot0:
     root: {fileID: 5863272537288733214}

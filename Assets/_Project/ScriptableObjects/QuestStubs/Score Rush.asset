@@ -13,6 +13,6 @@ MonoBehaviour:
   m_Name: Score Rush
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.QuestDef
   category: 2
-  targetCount: 400
+  targetCount: 70
   turnLimit: 12
   scoreReward: 400

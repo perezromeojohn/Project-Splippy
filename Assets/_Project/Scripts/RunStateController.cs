@@ -15,7 +15,7 @@ namespace projectsplippy
         [SerializeField] private Ease torrentSliderHopPulseEase = Ease.OutSine;
         [SerializeField, Min(0.02f)] private float torrentSliderValueTweenDuration = 0.12f;
         [SerializeField, Min(1)] private int torrentChargeTarget = 24;
-        [SerializeField, Min(1)] private int torrentDurationTurns = 3;
+        [SerializeField, Min(0.1f)] private float torrentDurationSeconds = 15f;
         [SerializeField, Min(1)] private int torrentPathRange = 10;
         [SerializeField, Min(1)] private int basePathRange = 7;
         [SerializeField, Min(1)] private int torrentScoreMultiplier = 3;
@@ -56,14 +56,14 @@ namespace projectsplippy
 
         public bool IsGameOver { get; private set; }
         public int CurrentScore { get; private set; }
-        public bool IsTorrentActive => torrentTurnsLeft > 0;
-        public int TorrentTurnsLeft => torrentTurnsLeft;
+        public bool IsTorrentActive => torrentTimer > 0f;
+        public float TorrentTimer => torrentTimer;
         public int BasePathRange => Mathf.Max(1, basePathRange);
         public int TorrentPathRange => Mathf.Max(BasePathRange, torrentPathRange);
         public int TorrentScoreMultiplier => Mathf.Max(1, torrentScoreMultiplier);
 
         private int torrentCharge;
-        private int torrentTurnsLeft;
+        private float torrentTimer;
         private bool torrentActivatedThisResolution;
         private int hazardLandfillClearsThisTurn;
         private Tween torrentSliderPulseTween;
@@ -85,6 +85,20 @@ namespace projectsplippy
 
         private void Update()
         {
+            if (torrentTimer > 0f)
+            {
+                torrentTimer -= Time.deltaTime;
+
+                if (torrentTimer <= 0f)
+                {
+                    torrentTimer = 0f;
+                    RefreshHud();
+                }
+                else if (torrentFlowSlider != null)
+                {
+                    torrentFlowSlider.value = Mathf.Clamp01(torrentTimer / Mathf.Max(0.1f, torrentDurationSeconds));
+                }
+            }
         }
 
         private void OnDisable()
@@ -98,7 +112,7 @@ namespace projectsplippy
         public void Initialize()
         {
             torrentChargeTarget = Mathf.Max(1, torrentChargeTarget);
-            torrentDurationTurns = Mathf.Max(1, torrentDurationTurns);
+            torrentDurationSeconds = Mathf.Max(0.1f, torrentDurationSeconds);
             torrentPathRange = Mathf.Max(1, torrentPathRange);
             basePathRange = Mathf.Max(1, basePathRange);
             torrentScoreMultiplier = Mathf.Max(1, torrentScoreMultiplier);
@@ -106,7 +120,7 @@ namespace projectsplippy
             IsGameOver = false;
             CurrentScore = 0;
             torrentCharge = 0;
-            torrentTurnsLeft = 0;
+            torrentTimer = 0f;
             torrentActivatedThisResolution = false;
             TryResolveRunStateAudioSource();
             CacheTorrentSliderScale();
@@ -213,11 +227,6 @@ namespace projectsplippy
 
             if (!gameOver)
             {
-                if (torrentWasActive)
-                {
-                    AdvanceTorrentTurn();
-                }
-
                 AddTorrentCharge(streakChargeGain);
                 RefreshHud();
             }
@@ -328,7 +337,7 @@ namespace projectsplippy
 
             if (IsTorrentActive)
             {
-                UpdateTorrentSliderValueWithTween(1f);
+                UpdateTorrentSliderValueWithTween(Mathf.Clamp01(torrentTimer / Mathf.Max(0.1f, torrentDurationSeconds)));
                 return;
             }
 
@@ -396,22 +405,14 @@ namespace projectsplippy
 
             if (torrentCharge >= torrentChargeTarget)
             {
-                torrentTurnsLeft = torrentDurationTurns;
+                torrentTimer = torrentDurationSeconds;
                 torrentCharge = 0;
                 torrentActivatedThisResolution = true;
                 PlayTorrentModeSfx();
             }
         }
 
-        private void AdvanceTorrentTurn()
-        {
-            if (!IsTorrentActive)
-            {
-                return;
-            }
 
-            torrentTurnsLeft = Mathf.Max(0, torrentTurnsLeft - 1);
-        }
 
         private static int? ResolveEffectiveCropVariant(TileStepResult step, int? previousEffectiveCropVariant)
         {
@@ -502,7 +503,7 @@ namespace projectsplippy
                 torrentFlowSlider.maxValue = 1f;
 
                 float normalized = IsTorrentActive
-                    ? 1f
+                    ? Mathf.Clamp01(torrentTimer / Mathf.Max(0.1f, torrentDurationSeconds))
                     : (float)torrentCharge / Mathf.Max(1, torrentChargeTarget);
 
                 torrentFlowSlider.value = Mathf.Clamp01(normalized);
@@ -514,7 +515,7 @@ namespace projectsplippy
         private float GetSliderNormalizedValueForCharge(int charge)
         {
             return IsTorrentActive
-                ? 1f
+                ? Mathf.Clamp01(torrentTimer / Mathf.Max(0.1f, torrentDurationSeconds))
                 : Mathf.Clamp01((float)Mathf.Clamp(charge, 0, torrentChargeTarget) / Mathf.Max(1, torrentChargeTarget));
         }
 

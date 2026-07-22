@@ -288,6 +288,9 @@ namespace projectsplippy
 
             if (slot != null && slot.root != null)
             {
+                Tween.CompleteAll(slot.root.transform);
+                slot.root.transform.localPosition = Vector3.zero;
+                slot.root.transform.localScale = Vector3.one;
                 slot.root.SetActive(false);
             }
 
@@ -307,10 +310,12 @@ namespace projectsplippy
             }
 
             Tween.CompleteAll(target);
+            target.localPosition = Vector3.zero;
+            target.localScale = Vector3.one;
 
+            // Quick shake — same as before
             if (timeoutShakeDuration > 0f)
             {
-                target.localPosition = Vector3.zero;
                 Tween.ShakeLocalPosition(
                     target,
                     timeoutShakeStrength,
@@ -318,13 +323,16 @@ namespace projectsplippy
                     timeoutShakeVibrato);
             }
 
+            // Shrink yoyo like complete, but shrinking instead of growing
             if (timeoutShrinkDuration > 0f)
             {
                 Tween.Scale(
                     target,
                     timeoutShrinkScale,
                     timeoutShrinkDuration,
-                    timeoutShrinkEase);
+                    timeoutShrinkEase,
+                    cycles: 2,
+                    cycleMode: CycleMode.Yoyo);
             }
         }
 

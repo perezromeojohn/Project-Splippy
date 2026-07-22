@@ -13,6 +13,6 @@ MonoBehaviour:
   m_Name: Speed Run
   m_EditorClassIdentifier: Assembly-CSharp::projectsplippy.QuestDef
   category: 2
-  targetCount: 200
+  targetCount: 120
   turnLimit: 8
   scoreReward: 200
